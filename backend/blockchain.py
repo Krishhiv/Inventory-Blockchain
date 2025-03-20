@@ -1,9 +1,62 @@
 import time
 import hashlib
-from security import sign_transaction, verify_transaction, generate_keys_for_customer, generate_company_keys
+import rsa
+import json
 
-# ✅ Ensure company keys exist before blockchain starts
-generate_company_keys()  # 🔹 FIX: Prevents FileNotFoundError for 'private_key.pem'
+class SecurityProfile:
+    def __init__(self, type, name):
+        self.type = type # 'employee' or 'customer' or 'auditor'
+        self.name = name
+        (self.public_id, self.private_id) = rsa.newkeys(512)
+        if self.type == 'employee':
+            self.save_to_employee_json()
+        elif self.type == 'customer':
+            self.save_to_customer_json()
+        else:
+            self.save_to_auditor_json()
+
+    def save_to_customer_json(self):
+        data = {
+            "type": self.type,
+            "name": self.name,
+            "public_id": self.public_id.save_pkcs1().decode(),  # Convert public key to PEM format
+            "private_id": self.private_id.save_pkcs1().decode()  # Convert private key to PEM format
+        }
+
+        with open('./backend/customers.json', 'w') as f:
+            json.dump(data, f, indent=4)
+
+        print(f"Saved {self.name}'s data into customers.json")
+
+    def save_to_employee_json(self):
+        data = {
+            "type": self.type,
+            "name": self.name,
+            "public_id": self.public_id.save_pkcs1().decode(),  # Convert public key to PEM format
+            "private_id": self.private_id.save_pkcs1().decode()  # Convert private key to PEM format
+        }
+
+        with open('./backend/employees.json', 'w') as f:
+            json.dump(data, f, indent=4)
+
+        print(f"Saved {self.name}'s data into employees.json")
+
+    def save_to_auditor_json(self):
+        data = {
+            "type": self.type,
+            "name": self.name,
+            "public_id": self.public_id.save_pkcs1().decode(),  # Convert public key to PEM format
+            "private_id": self.private_id.save_pkcs1().decode()  # Convert private key to PEM format
+        }
+
+        with open('./backend/auditors.json', 'w') as f:
+            json.dump(data, f, indent=4)
+
+        print(f"Saved {self.name}'s data into auditors.json")    
+
+    def add_profile(self, type, name):
+        new_profile = SecurityProfile(type, name)
+        return
 
 class Block:
     def __init__(self, uid, brand, item_name, price, status="Available", prevHash=""):
@@ -40,35 +93,6 @@ class Blockchain:
         self.tail.next = new_block
         self.tail = new_block
 
-    def execute_sale(self, uid, customer_name):
-        """Handles the secure sale process of an item."""
-        ptr = self.head
-        while ptr:
-            if ptr.uid == uid and ptr.status == "Available":
-                transaction_data = f"Sale of {ptr.brand} {ptr.item_name} for ₹{ptr.price}"
-
-                # ✅ Ensure customer keys exist
-                generate_keys_for_customer(customer_name)
-                customer_pub_key = f"{customer_name}_public.pem"
-
-                # ✅ Ensure company keys exist
-                generate_company_keys()  # 🔹 FIX: This ensures 'private_key.pem' exists before signing
-
-                # ✅ Sign transaction (Company & Customer)
-                company_signature = sign_transaction(transaction_data, "private_key.pem")
-                customer_signature = sign_transaction(transaction_data, f"{customer_name}_private.pem")
-
-                # ✅ Verify and execute sale
-                if verify_transaction(transaction_data, [company_signature, customer_signature], ["public_key.pem", customer_pub_key]):
-                    ptr.status = "Sold"  # ✅ Update block status
-                    print(f"✅ Sale executed: {ptr.brand} {ptr.item_name} is now SOLD.")
-                    self.rehash_chain()
-                    return True
-                else:
-                    print("❌ ERROR: Sale verification failed.")
-                    return False
-            ptr = ptr.next
-
     def rehash_chain(self):
         ptr = self.head
         while ptr:
@@ -90,18 +114,41 @@ class Blockchain:
 
             # ✅ Check block integrity
             if recalculated_hash != ptr.hash:
-                print("⚠️ ALERT! Blockchain data tampered at block UID:", ptr.uid)
+                print("ALERT! Blockchain data tampered at block UID:", ptr.uid)
                 return False
 
             # ✅ Check blockchain linkage
             if ptr.next.prevHash != ptr.hash:
-                print("⚠️ ALERT! Blockchain linkage broken at block UID:", ptr.uid)
+                print("ALERT! Blockchain linkage broken at block UID:", ptr.uid)
                 return False
 
             ptr = ptr.next
 
         print("✅ Blockchain is valid and secure.")
         return True
+    
+    def execute_sale(self, item, employee_name, customer_name):
+        # Searching for employee and customer in the .json files and extracting their corresponding objects.
+        with open('./backend/employees.json', 'r') as f:
+            employees = json.load(f)
+        
+        for employee in employees:
+            if employee.get('name') == employee_name:
+                break
+        
+        with open('./backend/customers.json', 'r') as f:
+            customers = json.load(f)
+
+        for customer in customers:
+            if customer.get('name') == customer_name:
+                break
+
+        # Searching for the block of the item for which the sale is happening
+        ptr = self.head
+        while ptr:
+            if ptr.item_name == item:
+                """ Write full sale execution logic here """
+                pass
 
     def print_blockchain(self):
         """Traverses and prints all blocks in the blockchain."""
@@ -118,18 +165,8 @@ class Blockchain:
             print("-" * 50)
             current = current.next
 
-# ✅ Run Tests
+# Run Tests
 if __name__ == "__main__":
-    luxury_inventory = Blockchain()
-    luxury_inventory.add_block(1, "Rolex", "Daytona", 300000)
-    luxury_inventory.add_block(2, "Louis Vuitton", "Leather Handbag", 250000)
-    luxury_inventory.add_block(3, "Ferrari", "SF90 Stradale", 55000000)
-
-    # ✅ Print Initial Blockchain
-    luxury_inventory.print_blockchain()
-
-    # ✅ Execute Sale
-    luxury_inventory.execute_sale(1, "JohnDoe")
-
-    # ✅ Print Updated Blockchain
-    luxury_inventory.print_blockchain()
+    diya_basu = SecurityProfile('auditor', 'Diya Basu')
+    krishhiv_mehra = SecurityProfile('employee', 'Krishhiv Mehra')
+    virat_kohli = SecurityProfile('customer', 'Virat Kohli')
