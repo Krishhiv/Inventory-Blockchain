@@ -1,62 +1,6 @@
 import time
 import hashlib
-import rsa
 import json
-
-class SecurityProfile:
-    def __init__(self, type, name):
-        self.type = type # 'employee' or 'customer' or 'auditor'
-        self.name = name
-        (self.public_id, self.private_id) = rsa.newkeys(512)
-        if self.type == 'employee':
-            self.save_to_employee_json()
-        elif self.type == 'customer':
-            self.save_to_customer_json()
-        else:
-            self.save_to_auditor_json()
-
-    def save_to_customer_json(self):
-        data = {
-            "type": self.type,
-            "name": self.name,
-            "public_id": self.public_id.save_pkcs1().decode(),  # Convert public key to PEM format
-            "private_id": self.private_id.save_pkcs1().decode()  # Convert private key to PEM format
-        }
-
-        with open('./backend/customers.json', 'w') as f:
-            json.dump(data, f, indent=4)
-
-        print(f"Saved {self.name}'s data into customers.json")
-
-    def save_to_employee_json(self):
-        data = {
-            "type": self.type,
-            "name": self.name,
-            "public_id": self.public_id.save_pkcs1().decode(),  # Convert public key to PEM format
-            "private_id": self.private_id.save_pkcs1().decode()  # Convert private key to PEM format
-        }
-
-        with open('./backend/employees.json', 'w') as f:
-            json.dump(data, f, indent=4)
-
-        print(f"Saved {self.name}'s data into employees.json")
-
-    def save_to_auditor_json(self):
-        data = {
-            "type": self.type,
-            "name": self.name,
-            "public_id": self.public_id.save_pkcs1().decode(),  # Convert public key to PEM format
-            "private_id": self.private_id.save_pkcs1().decode()  # Convert private key to PEM format
-        }
-
-        with open('./backend/auditors.json', 'w') as f:
-            json.dump(data, f, indent=4)
-
-        print(f"Saved {self.name}'s data into auditors.json")    
-
-    def add_profile(self, type, name):
-        new_profile = SecurityProfile(type, name)
-        return
 
 class Block:
     def __init__(self, uid, brand, item_name, price, status="Available", prevHash=""):
@@ -167,6 +111,4 @@ class Blockchain:
 
 # Run Tests
 if __name__ == "__main__":
-    diya_basu = SecurityProfile('auditor', 'Diya Basu')
-    krishhiv_mehra = SecurityProfile('employee', 'Krishhiv Mehra')
-    virat_kohli = SecurityProfile('customer', 'Virat Kohli')
+    pass
