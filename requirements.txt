@@ -1,0 +1,12 @@
+blspy @ file:///Users/krishhiv/Downloads/blspy-2.0.3-cp312-cp312-macosx_11_0_arm64.whl#sha256=96c78e035ea15c826e2330ad2a2619a6cb3519ac977f74a608911ef2c105d3ec
+cached-property==2.0.1
+cytoolz==1.0.1
+eth-hash==0.7.1
+eth-typing==5.2.0
+eth-utils==5.2.0
+py-ecc==7.0.1
+pyasn1==0.6.1
+rsa==4.9
+toolz==1.0.0
+typing_extensions==4.13.0
+wheel==0.45.1

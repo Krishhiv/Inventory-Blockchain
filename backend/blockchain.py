@@ -1,6 +1,7 @@
 import time
 import hashlib
 import json
+import os   
 
 class Block:
     def __init__(self, uid, brand, item_name, price, status="Available", prevHash=""):
@@ -24,91 +25,80 @@ class Block:
 
 class Blockchain:
     def __init__(self):
-        self.head = self.create_genesis_block()
-        self.tail = self.head
+        self.chains = {}
 
-    def create_genesis_block(self):
-        """Creates the first block in the blockchain."""
-        return Block(uid=0, brand="Genesis", item_name="Genesis Block", price=0, prevHash="")
-
+    def create_genesis_block(self, letter, prev_slot_hash=""):
+        """Creates a Genesis block for a given letter slot."""
+        return Block(uid=0, brand=f"Genesis-{letter}", item_name="Genesis Block", price=0, prevHash=prev_slot_hash)
+    
     def add_block(self, uid, brand, item_name, price):
-        """Adds a new block to the blockchain."""
-        new_block = Block(uid, brand, item_name, price, prevHash=self.tail.hash)
-        self.tail.next = new_block
-        self.tail = new_block
+        """Adds a new block to the correct letter slot."""
+        first_letter = brand[0].upper()  # Get the first letter of the brand
+        
+        if first_letter not in self.chains:
+            # If this is the first entry for this letter, create a genesis block
+            prev_slot_hash = self.get_last_slot_hash(chr(ord(first_letter) - 1))  # Get hash from previous slot
+            self.chains[first_letter] = self.create_genesis_block(first_letter, prev_slot_hash)
+        
+        # Traverse to the tail of the linked list for this slot
+        current = self.chains[first_letter]
+        while current.next:
+            current = current.next
+        
+        # Create and link the new block
+        new_block = Block(uid, brand, item_name, price, prevHash=current.hash)
+        current.next = new_block
+        new_block.next = None
 
-    def rehash_chain(self):
-        ptr = self.head
-        while ptr:
-            # Store the next block (if it exists) before updating the current block's hash
-            next_block = ptr.next
-            # Recalculate the current block's hash
-            ptr.hash = ptr.calculate_hash()
-            # If there’s a next block, update its prevHash to the current block’s new hash
-            if next_block:
-                next_block.prevHash = ptr.hash
-            ptr = ptr.next
-        print("✅ Blockchain re-hashed successfully.")
-
+    def get_last_slot_hash(self, prev_letter):
+        """Gets the last block's hash from the previous letter slot."""
+        if prev_letter in self.chains:
+            current = self.chains[prev_letter]
+            while current.next:
+                current = current.next
+            return current.hash
+        return ""  # Return empty if no previous slot exists
+    
     def validate_chain(self):
-        """Validates blockchain integrity and linkage."""
-        ptr = self.head
-        while ptr.next:
-            recalculated_hash = ptr.calculate_hash()
-
-            # ✅ Check block integrity
-            if recalculated_hash != ptr.hash:
-                print("ALERT! Blockchain data tampered at block UID:", ptr.uid)
-                return False
-
-            # ✅ Check blockchain linkage
-            if ptr.next.prevHash != ptr.hash:
-                print("ALERT! Blockchain linkage broken at block UID:", ptr.uid)
-                return False
-
-            ptr = ptr.next
-
+        """Validates blockchain integrity and linkage for all letter slots."""
+        for letter, head in self.chains.items():
+            current = head
+            while current.next:
+                recalculated_hash = current.calculate_hash()
+                
+                if recalculated_hash != current.hash:
+                    print(f"ALERT! Blockchain tampered at block UID: {current.uid} in slot {letter}")
+                    return False
+                
+                if current.next.prevHash != current.hash:
+                    print(f"ALERT! Blockchain linkage broken at block UID: {current.uid} in slot {letter}")
+                    return False
+                
+                current = current.next
+        
         print("✅ Blockchain is valid and secure.")
         return True
     
-    def execute_sale(self, item, employee_name, customer_name):
-        # Searching for employee and customer in the .json files and extracting their corresponding objects.
-        with open('./backend/employees.json', 'r') as f:
-            employees = json.load(f)
-        
-        for employee in employees:
-            if employee.get('name') == employee_name:
-                break
-        
-        with open('./backend/customers.json', 'r') as f:
-            customers = json.load(f)
-
-        for customer in customers:
-            if customer.get('name') == customer_name:
-                break
-
-        # Searching for the block of the item for which the sale is happening
-        ptr = self.head
-        while ptr:
-            if ptr.item_name == item:
-                """ Write full sale execution logic here """
-                pass
-
     def print_blockchain(self):
-        """Traverses and prints all blocks in the blockchain."""
-        current = self.head
-        while current:
-            print(f"\n🔹 Block UID: {current.uid}")
-            print(f"   Brand: {current.brand}")
-            print(f"   Item Name: {current.item_name}")
-            print(f"   Price: ₹{current.price}")
-            print(f"   Date: {current.timestamp}")
-            print(f"   Status: {current.status}")
-            print(f"   Previous Hash: {current.prevHash}")
-            print(f"   Current Hash: {current.hash}")
-            print("-" * 50)
-            current = current.next
+        """Prints all blocks grouped by letter slots."""
+        for letter, head in self.chains.items():
+            print(f"\n🔠 Slot: {letter}")
+            current = head
+            while current:
+                print(f"  🔹 Block UID: {current.uid}, Brand: {current.brand}, Item: {current.item_name}, Price: ₹{current.price}, Status: {current.status}, Hash: {current.hash}")
+                current = current.next
+            print("-" * 60)
 
-# Run Tests
+# Example Usage
+def main():
+    bc = Blockchain()
+    bc.add_block(1, "Rolex", "Daytona", 1500000)
+    bc.add_block(2, "Rolex", "Submariner", 1200000)
+    bc.add_block(3, "Louis Vuitton", "Handbag", 250000)
+    bc.add_block(4, "Loro Piana", "Cashmere Jacket", 600000)
+    bc.print_blockchain()
+    bc.validate_chain()
+
 if __name__ == "__main__":
-    pass
+    main()
+
