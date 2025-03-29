@@ -1,9 +1,9 @@
 [
     {
         "name": "hiv",
-        "hashed_password": "BNuF5RkS/H8D/iHkgQwOhtWj23hG2z+fT2NOVaDeFpc=",
-        "public_key": "o5pjxMFUOWBpXfVfrPyoU9ScivNkRcP1uESo2/fnqRfIMVrQ2tmtiYfBux/to0QC",
-        "encrypted_private_key": "vsU8dcIJHW+T6OwNtHf2xnUQnQgKakhJ/RHrGltTsXmRvDE2I9BGqddtZGJe5Ea5CAJ0+ZAGF7k7n/Kn",
-        "salt": "GHiW72ouaDJNwFaZ/lJ97g=="
+        "hashed_password": "$2b$12$UwCOuN7BJQvDSJZ70zgPQeeSJyxTgqKjlawrCOFoFtfOXakKpNFuG",
+        "public_key": "jf50rXwF2/jwrcK9A7VqT6oSdM6zXE2xbdPs5QP3MZbavyvKqz/8GTeLtj8rM0Ve",
+        "encrypted_private_key": "aN90RsjxKc/ZRpxZhop6pmm2g8RNdq54f/2QJJr0fhyWuSCGgLm4BgqhELOFenxJ8Ih3sQvUoFtjq8Y8",
+        "salt": "$2b$12$UwCOuN7BJQvDSJZ70zgPQe"
     }
 ]

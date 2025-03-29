@@ -2,6 +2,7 @@ import json
 import getpass
 import base64
 import os
+import bcrypt
 import hashlib
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -14,23 +15,23 @@ class Keys:
     def __init__(self, name, role, password):
         self.name = name
         self.role = role
-        self.salt = os.urandom(16)  # Generate a random salt
+        self.salt = bcrypt.gensalt()  # Generate bcrypt salt
         self.nonce = os.urandom(12)  # Generate a random nonce for AES-GCM
-        self.hashed_password = self.hash_password(password, self.salt)  # Hash password
-        self.encryption_key = self.derive_key(password, self.salt)  # Derive encryption key
+        self.hashed_password = self.hash_password(password)  # Hash password using bcrypt
+        self.encryption_key = self.derive_key(password)  # Derive encryption key using PBKDF2
         self.private_key, self.public_key = self.generate_bls_keys(password)  # Generate BLS keys
         self.encrypted_private_key = self.encrypt_private_key()  # Encrypt private key
 
-    def hash_password(self, password, salt):
-        """Hashes a password using SHA-256 with a salt."""
-        return hashlib.sha256(salt + password.encode()).digest()
+    def hash_password(self, password):
+        """Hashes a password using bcrypt."""
+        return bcrypt.hashpw(password.encode(), self.salt).decode()
 
-    def derive_key(self, password, salt):
+    def derive_key(self, password):
         """Derives an AES encryption key from a password using PBKDF2."""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=salt,
+            salt=self.salt,
             iterations=100000,
         )
         return kdf.derive(password.encode())
@@ -57,10 +58,10 @@ class Keys:
         filename = f"{self.role}s.json"
         data_entry = {
             "name": self.name,
-            "hashed_password": base64.b64encode(self.hashed_password).decode(),
+            "hashed_password": self.hashed_password,
             "public_key": base64.b64encode(self.public_key).decode(),
             "encrypted_private_key": self.encrypted_private_key,  # Already a Base64 string
-            "salt": base64.b64encode(self.salt).decode(),
+            "salt": self.salt.decode(),  # Store bcrypt salt as string
         }
         try:
             with open(filename, "r") as file:
@@ -83,14 +84,13 @@ class Keys:
             return None
         for user in users:
             if user["name"] == name:
-                stored_hashed_password = base64.b64decode(user["hashed_password"])
-                salt = base64.b64decode(user["salt"])
+                stored_hashed_password = user["hashed_password"].encode()
+                salt = user["salt"].encode()
                 encrypted_data = base64.b64decode(user["encrypted_private_key"])
                 nonce, tag, ciphertext = encrypted_data[:12], encrypted_data[12:28], encrypted_data[28:]
                 
                 # Verify password
-                input_hashed_password = hashlib.sha256(salt + input_password.encode()).digest()
-                if input_hashed_password == stored_hashed_password:
+                if bcrypt.checkpw(input_password.encode(), stored_hashed_password):
                     print("\n✅ Password correct! Now verifying 2FA...")
                     otp = input("Enter the 6-digit 2FA code: ")
                     if otp != "123456":
@@ -118,7 +118,6 @@ class Keys:
             iterations=100000,
         )
         return kdf.derive(password.encode())
-
 
 # ================================
 # 🌟 Menu-Based `main()` Function
