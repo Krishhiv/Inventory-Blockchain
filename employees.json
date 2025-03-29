@@ -1,0 +1,9 @@
+[
+    {
+        "name": "hiv",
+        "hashed_password": "BNuF5RkS/H8D/iHkgQwOhtWj23hG2z+fT2NOVaDeFpc=",
+        "public_key": "o5pjxMFUOWBpXfVfrPyoU9ScivNkRcP1uESo2/fnqRfIMVrQ2tmtiYfBux/to0QC",
+        "encrypted_private_key": "vsU8dcIJHW+T6OwNtHf2xnUQnQgKakhJ/RHrGltTsXmRvDE2I9BGqddtZGJe5Ea5CAJ0+ZAGF7k7n/Kn",
+        "salt": "GHiW72ouaDJNwFaZ/lJ97g=="
+    }
+]
