@@ -1,9 +1,0 @@
-[
-    {
-        "name": "hiv",
-        "hashed_password": "$2b$12$UwCOuN7BJQvDSJZ70zgPQeeSJyxTgqKjlawrCOFoFtfOXakKpNFuG",
-        "public_key": "jf50rXwF2/jwrcK9A7VqT6oSdM6zXE2xbdPs5QP3MZbavyvKqz/8GTeLtj8rM0Ve",
-        "encrypted_private_key": "aN90RsjxKc/ZRpxZhop6pmm2g8RNdq54f/2QJJr0fhyWuSCGgLm4BgqhELOFenxJ8Ih3sQvUoFtjq8Y8",
-        "salt": "$2b$12$UwCOuN7BJQvDSJZ70zgPQe"
-    }
-]

@@ -7,7 +7,7 @@ import hashlib
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from blspy import PrivateKey, G1Element
+from blspy import PrivateKey, G2Element, G1Element
 
 BLS_GROUP_ORDER = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 
@@ -118,6 +118,145 @@ class Keys:
             iterations=100000,
         )
         return kdf.derive(password.encode())
+
+class Signing:
+    @staticmethod
+    def sign_data(name, role, password, data):
+        priv_key_hex = Keys.authenticate_and_decrypt(name, role, password)
+        if priv_key_hex is None:
+            print("❌ Authentication failed. Unable to sign data.")
+            return None
+        else:
+            private_key = PrivateKey.from_bytes(bytes.fromhex(priv_key_hex))
+            signature = private_key.sign(data.encode())
+            return base64.b64encode(bytes(signature)).decode()
+    
+    @staticmethod
+    def sign_data_dual(emp_name, emp_password, cust_name, cust_password, data):
+        emp_private_key_hex = Keys.authenticate_and_decrypt(emp_name, "employee", emp_password)
+        cust_private_key_hex = Keys.authenticate_and_decrypt(cust_name, "customer", cust_password)
+
+        if not emp_private_key_hex or not cust_private_key_hex:
+            print("❌ Authentication failed for one or both users. Unable to sign data.")
+            return None
+        
+        emp_private_key = PrivateKey.from_bytes(bytes.fromhex(emp_private_key_hex))
+        cust_private_key = PrivateKey.from_bytes(bytes.fromhex(cust_private_key_hex))
+
+        emp_signature = emp_private_key.sign(data.encode())
+        cust_signature = cust_private_key.sign(data.encode())
+        
+        aggregated_signature = G2Element.aggregate([emp_signature, cust_signature])
+        return base64.b64encode(bytes(aggregated_signature)).decode()
+    
+    @staticmethod
+    def verify_signature(public_key_b64, data, signature_b64):
+        """Verifies if the given signature is valid for the provided data and public key."""
+        public_key = G1Element.from_bytes(base64.b64decode(public_key_b64))
+        signature = G2Element.from_bytes(base64.b64decode(signature_b64))
+        
+        return signature.verify(public_key, data.encode())
+
+class MerkleNode:
+    def __init__(self, value):
+        self.data = value
+        self.left = None
+        self.right = None
+        self.parent = None
+
+class MerkleTree:
+    def __init__(self):
+        self.public_keys = []  # List of Tuples, each a leaf node
+        self.root = None
+
+    def add_block_keys(self, creation_pubkey_b64, sale_pubkey_b64=None):
+        """ Adds new public key pair to the tree and rebuilds it. """
+        self.public_keys.append((creation_pubkey_b64, sale_pubkey_b64 or ""))
+        self._build_merkle_tree()
+
+    def _build_merkle_tree(self):
+        """ Constructs a Merkle Tree from the stored keys. """
+        if not self.public_keys:
+            return
+
+        # Step 1: Create leaf nodes
+        nodes = []
+        for creation_key, sale_key in self.public_keys:
+            node0 = MerkleNode(creation_key)  
+            node1 = MerkleNode(sale_key)
+            parent_hash = hashlib.sha256((creation_key + sale_key).encode()).hexdigest()
+            parent = MerkleNode(parent_hash)
+            parent.left = node0
+            parent.right = node1
+            node0.parent = parent
+            node1.parent = parent
+            nodes.append(parent)
+
+        # Step 2: Build tree upwards until root is reached
+        while len(nodes) > 1:
+            new_level = []
+            if len(nodes) % 2 != 0:
+                nodes.append(nodes[-1])  # Duplicate last node if odd number
+            
+            for i in range(0, len(nodes), 2):
+                combined_hash = hashlib.sha256((nodes[i].data + nodes[i+1].data).encode()).hexdigest()
+                parent = MerkleNode(combined_hash)
+                parent.left = nodes[i]
+                parent.right = nodes[i+1]
+                nodes[i].parent = parent
+                nodes[i+1].parent = parent
+                new_level.append(parent)
+
+            nodes = new_level  # Move to the next level
+
+        self.root = nodes[0]  # Final root node
+
+from collections import deque
+
+def print_merkle_tree(root):
+    """Prints the Merkle tree in a level-wise format."""
+    if not root:
+        print("The Merkle tree is empty.")
+        return
+
+    queue = deque([(root, 0)])  # (node, level)
+    current_level = 0
+    result = []
+
+    while queue:
+        node, level = queue.popleft()
+
+        # Move to a new level in the output
+        if level > current_level:
+            print(" | ".join(result))  # Print current level
+            result = []  # Reset list for new level
+            current_level = level
+
+        # Add node data (shorten hash for readability)
+        result.append(node.data[:8] + "..." if len(node.data) > 8 else node.data)
+
+        # Add children to the queue
+        if node.left:
+            queue.append((node.left, level + 1))
+        if node.right:
+            queue.append((node.right, level + 1))
+
+    # Print last level
+    if result:
+        print(" | ".join(result))
+
+def print_merkle_tree_recursive(node, level=0):
+    """Prints the Merkle tree in an indented hierarchical format."""
+    if node is None:
+        return
+    
+    print(" " * (4 * level) + "|-- " + (node.data[:8] + "..." if len(node.data) > 8 else node.data))
+    
+    # Print left and right children
+    if node.left or node.right:  # Only print children if they exist
+        print_merkle_tree_recursive(node.left, level + 1)
+        print_merkle_tree_recursive(node.right, level + 1)
+
 
 # ================================
 # 🌟 Menu-Based `main()` Function
