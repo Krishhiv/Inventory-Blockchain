@@ -2,6 +2,11 @@ import time
 import hashlib
 import threading
 import queue
+import json
+import getpass
+from signatures import Keys, Signing, MerkleNode, MerkleTree
+
+
 
 class Block:
     def __init__(self, uid, brand, item_name, price, status="Available", prevHash=""):
@@ -15,6 +20,12 @@ class Block:
         self.hash = self.calculate_hash()
         self.next = None  
 
+        self.creation_signature = None # b64 encoded
+        self.creation_pub = None # b64 encoded
+        
+        self.sale_agg_signature = None # b64 encoded
+        self.sale_agg_pub = None # b64 encoded
+
     def calculate_hash(self):
         block_data = (
             str(self.uid) + self.brand + self.item_name + str(self.price) +
@@ -26,6 +37,7 @@ class Blockchain:
     def __init__(self):
         self.chains = {}
         self.pending_blocks = queue.Queue()
+        self.merkle_tree = MerkleTree()  # Create merkle_tree as an instance variable
         self.initialize_genesis_blocks()
         self.start_verification_thread()
 
@@ -45,8 +57,117 @@ class Blockchain:
         first_letter = brand[0].upper()
         # Get the last block hash for the chain this block will be added to
         prev_hash = self.get_last_block_hash(first_letter)
+        
+        # Create new block
         new_block = Block(uid, brand, item_name, price, status, prevHash=prev_hash)
+        
+        # Calculate the block's hash
+        new_block.hash = new_block.calculate_hash()
+        
+        # Get the data that will be signed
+        block_data = (
+            str(new_block.uid) + new_block.brand + new_block.item_name + str(new_block.price) +
+            new_block.status + str(new_block.timestamp) + new_block.prevHash
+        )
+        
+        # Get user credentials for signing
+        name = input("Enter your name: ")
+        user_role = input("Are you an employee or customer? ").lower()
+
+        if user_role not in ["employee", "customer"]:
+            print("❌ Invalid role! Please enter 'employee' or 'customer'.")
+            return
+
+        password = getpass.getpass("Enter your password: ")
+
+        # Sign the block with user's private key
+        signature_result = Signing.sign_data(name, user_role, password, block_data)
+        
+        if not signature_result:
+            print("❌ Failed to sign the block. Block not added.")
+            return
+            
+        new_block.creation_signature, new_block.creation_pub = signature_result
+        
+        # Add the block to pending queue for verification
         self.pending_blocks.put(new_block)
+        print(f"Block for {brand} - UID: {uid} submitted for verification.")
+
+    def execute_sale(self, uid, brand):
+        # Step 1: Search for the block and check if the product is available
+        first_letter = brand[0].upper()
+        current = self.chains[first_letter]
+        block_to_sell = None
+        while current:
+            if current.uid == uid:
+                block_to_sell = current
+                break
+            current = current.next
+        
+        if block_to_sell is None:
+            print("❌ Item is not in inventory")
+            return
+        if block_to_sell.status == "Sold":
+            print("❌ Item is already sold.")
+            return
+        
+        # Get the data that will be signed
+        block_data = (
+            str(block_to_sell.uid) + block_to_sell.brand + block_to_sell.item_name + str(block_to_sell.price) +
+            block_to_sell.status + str(block_to_sell.timestamp) + block_to_sell.prevHash
+        )
+
+        # Step 2: Take inputs for employee and customer credentials
+        emp_name = input("Enter the name of the employee selling this item: ")
+        emp_password = getpass.getpass(f"Enter Employee {emp_name}'s password: ")
+
+        cust_name = input("Enter the name of the customer buying this item: ")
+
+        try:
+            with open("./profiles/customers.json", "r") as f:
+                customers = json.load(f)
+        except FileNotFoundError:
+            customers = []
+
+        # Check if the customer exists, create profile if needed
+        if not any(customer["name"] == cust_name for customer in customers):
+            print(f"Customer {cust_name} not found. Creating a new profile...")
+            cust_password = getpass.getpass(f"Enter Customer {cust_name}'s password: ")
+            cust = Keys(cust_name, "customer", cust_password)
+            cust.add_to_json()
+        else:
+            cust_password = getpass.getpass(f"Enter Customer {cust_name}'s password: ")
+
+        # Create a sale update block (clone of the block to be sold with additional signatures)
+        sale_update_block = Block(
+            uid=block_to_sell.uid,
+            brand=block_to_sell.brand,
+            item_name=block_to_sell.item_name,
+            price=block_to_sell.price,
+            status="Sold",
+            prevHash=block_to_sell.prevHash
+        )
+        
+        # Copy existing block properties
+        sale_update_block.hash = block_to_sell.hash
+        sale_update_block.timestamp = block_to_sell.timestamp
+        sale_update_block.creation_signature = block_to_sell.creation_signature
+        sale_update_block.creation_pub = block_to_sell.creation_pub
+        
+        # Add new sale signatures
+        signature_result = Signing.sign_data_dual(
+            emp_name, emp_password, cust_name, cust_password, block_data
+        )
+        
+        if not signature_result:
+            print("❌ Failed to create signatures for the sale. Sale canceled.")
+            return
+            
+        sale_update_block.sale_agg_signature, sale_update_block.sale_agg_pub = signature_result
+        
+        # Add the update to the pending queue for verification
+        self.pending_blocks.put(sale_update_block)
+        print("Sale submitted for verification.")
 
     def get_last_block_hash(self, letter):
         if letter and letter in self.chains:
@@ -74,16 +195,101 @@ class Blockchain:
             time.sleep(2)  # Reduce delay for faster validation
             while not self.pending_blocks.empty():
                 block = self.pending_blocks.get()
-                if self.verify_block(block):
-                    self.commit_block(block)
+                
+                # Step 1: Verify block hash integrity
+                if not self.verify_block_hash(block):
+                    print(f"❌ Block hash verification failed for {block.brand} - UID: {block.uid}")
+                    continue
+                    
+                # Step 2: Verify creation signature
+                if not self.verify_creation_signature(block):
+                    print(f"❌ Creation signature verification failed for {block.brand} - UID: {block.uid}")
+                    continue
+                    
+                # Step 3: If this is a sale update (has sale signature), verify it
+                if block.sale_agg_signature and block.sale_agg_pub:
+                    if not self.verify_sale_signature(block):
+                        print(f"❌ Sale signature verification failed for {block.brand} - UID: {block.uid}")
+                        continue
+                
+                # Step 4: Commit block to chain
+                self.commit_block(block)
+                
+                # Step 5: Verify Merkle tree integrity after adding the new block
+                if not self.merkle_tree.verify_merkle():
+                    print("❌ Merkle tree verification failed after adding block!")
+                    # We could implement rollback logic here if needed
 
-    def verify_block(self, block):
+    def verify_block_hash(self, block):
+        """Verify that the block's hash is calculated correctly"""
         return block.hash == block.calculate_hash()
 
-    def commit_block(self, block):
-        first_letter = block.brand[0].upper()
-        current = self.chains[first_letter]
+    def verify_creation_signature(self, block):
+        """Verify the creation signature for a block"""
+        if not block.creation_signature or not block.creation_pub:
+            print("❌ Missing creation signature or public key")
+            return False
+            
+        # Reconstruct the data that was signed
+        block_data = (
+            str(block.uid) + block.brand + block.item_name + str(block.price) +
+            block.status + str(block.timestamp) + block.prevHash
+        )
+        
+        # Verify the signature using the Signing class
+        try:
+            return Signing.verify_signature(block.creation_pub, block_data, block.creation_signature)
+        except Exception as e:
+            print(f"❌ Signature verification error: {e}")
+            return False
 
+    def verify_sale_signature(self, block):
+        """Verify the aggregated sale signature"""
+        if not block.sale_agg_signature or not block.sale_agg_pub:
+            print("❌ Missing sale signature or public key")
+            return False
+            
+        # Reconstruct the data that was signed
+        block_data = (
+            str(block.uid) + block.brand + block.item_name + str(block.price) +
+            block.status + str(block.timestamp) + block.prevHash
+        )
+        
+        # Verify the aggregated signature using the Signing class
+        try:
+            return Signing.verify_signature(block.sale_agg_pub, block_data, block.sale_agg_signature)
+        except Exception as e:
+            print(f"❌ Sale signature verification error: {e}")
+            return False
+
+    def commit_block(self, block):
+        """Commit a verified block to the blockchain"""
+        first_letter = block.brand[0].upper()
+        
+        # Handle sale updates differently from new blocks
+        if block.sale_agg_signature and block.sale_agg_pub:
+            # This is a sale update - find the existing block and update it
+            current = self.chains[first_letter]
+            while current:
+                if current.uid == block.uid and current.brand == block.brand:
+                    # Update existing block with sale information
+                    current.status = "Sold"
+                    current.sale_agg_signature = block.sale_agg_signature
+                    current.sale_agg_pub = block.sale_agg_pub
+                    
+                    # Update the Merkle tree with sale information
+                    self.merkle_tree.add_block_keys(current.creation_pub, current.sale_agg_pub)
+                    
+                    print(f"✅ Sale verified and recorded for {block.brand} - UID: {block.uid}")
+                    return
+                current = current.next
+                
+            print(f"❌ Could not find block with UID {block.uid} to update sale status")
+            return
+        
+        # For new blocks (not sales), proceed with normal block addition
+        current = self.chains[first_letter]
+        
         # Traverse to the last block in the chain
         while current.next:
             current = current.next
@@ -92,6 +298,11 @@ class Blockchain:
         block.prevHash = current.hash
         block.hash = block.calculate_hash()  # Recalculate hash after updating prevHash
         current.next = block  
+        
+        # Update the Merkle tree with the new block's creation key
+        self.merkle_tree.add_block_keys(block.creation_pub)
+
+        print(f"✅ New block verified and added: {block.brand} - UID: {block.uid}")
 
         # After adding the block, update the prevHash of genesis blocks of all subsequent letters
         self.update_subsequent_prev_hashes(first_letter)
@@ -173,6 +384,87 @@ class Blockchain:
         print("✅ Blockchain is valid!")
         return True
     
+    def verify_block_signatures(self, specific_uid=None, specific_brand=None):
+        """Verify signatures for all blocks or a specific block"""
+        all_valid = True
+        
+        for letter, head in sorted(self.chains.items()):
+            if specific_brand and specific_brand[0].upper() != letter:
+                continue
+                
+            current = head
+            while current:
+                if specific_uid is not None and current.uid != specific_uid:
+                    current = current.next
+                    continue
+                    
+                # Skip genesis blocks
+                if current.uid == 0 and "Genesis" in current.brand:
+                    current = current.next
+                    continue
+                
+                # Reconstruct the original signed data
+                block_data = (
+                    str(current.uid) + current.brand + current.item_name + str(current.price) +
+                    current.status + str(current.timestamp) + current.prevHash
+                )
+                
+                # Verify creation signature
+                if current.creation_signature and current.creation_pub:
+                    try:
+                        creation_valid = Signing.verify_signature(
+                            current.creation_pub, block_data, current.creation_signature
+                        )
+                        if not creation_valid:
+                            print(f"❌ Creation signature invalid: {current.brand} - UID: {current.uid}")
+                            all_valid = False
+                    except Exception as e:
+                        print(f"❌ Creation signature verification error: {current.brand} - UID: {current.uid}, {e}")
+                        all_valid = False
+                else:
+                    print(f"⚠️ Missing creation signature: {current.brand} - UID: {current.uid}")
+                    all_valid = False
+                
+                # Verify sale signature if marked as sold
+                if current.status == "Sold":
+                    if current.sale_agg_signature and current.sale_agg_pub:
+                        try:
+                            sale_valid = Signing.verify_signature(
+                                current.sale_agg_pub, block_data, current.sale_agg_signature
+                            )
+                            if not sale_valid:
+                                print(f"❌ Sale signature invalid: {current.brand} - UID: {current.uid}")
+                                all_valid = False
+                        except Exception as e:
+                            print(f"❌ Sale signature verification error: {current.brand} - UID: {current.uid}, {e}")
+                            all_valid = False
+                    else:
+                        print(f"⚠️ Item marked as sold but missing sale signature: {current.brand} - UID: {current.uid}")
+                        all_valid = False
+                
+                current = current.next
+                
+                # Break early if we found the specific block
+                if specific_uid is not None and specific_brand is not None and current and current.uid == specific_uid:
+                    break
+        
+        if all_valid:
+            print("✅ All signatures are valid!")
+        return all_valid
+        
+    def verify_merkle_tree(self):
+        """Verify the integrity of the Merkle tree"""
+        return self.merkle_tree.verify_merkle()
+    
+    def print_merkle_tree(self):
+        """Print the current Merkle tree"""
+        from signatures import print_merkle_tree_recursive
+        print("\n📊 Current Merkle Tree:")
+        if self.merkle_tree.root:
+            print_merkle_tree_recursive(self.merkle_tree.root)
+        else:
+            print("Merkle tree is empty.")
+    
     def start_verification_thread(self):
         thread = threading.Thread(target=self.verify_and_add_blocks, daemon=True)
         thread.start()
@@ -189,48 +481,233 @@ class Blockchain:
                 print(f"  🔹 Block UID: {current.uid}, Brand: {current.brand}, Item: {current.item_name}, Price: ₹{current.price}, Status: {current.status}")
                 print(f"    Previous Hash: {prev_hash_display}")
                 print(f"    Hash: {hash_display}")
+                
+                # Show signature info
+                if current.creation_signature:
+                    print(f"    ✍️ Creation Signature: Present")
+                if current.sale_agg_signature:
+                    print(f"    ✍️ Sale Signature: Present")
+                    
                 current = current.next
             print("-" * 60)
 
 def main():
+    """
+    Main function for the blockchain-based inventory and sales system
+    with signature verification and Merkle tree integrity checks.
+    """
+    # Initialize the blockchain
     bc = Blockchain()
+    print("\n🔗 Blockchain Inventory System Initialized 🔗")
+    print("All blocks and transactions are cryptographically verified")
     
     while True:
-        print("\n--- Blockchain Menu ---")
-        print("1. Add Block")
-        print("2. Print Blockchain")
-        print("3. Validate Blockchain")
-        print("4. Exit")
+        print("\n" + "=" * 60)
+        print("📋 BLOCKCHAIN INVENTORY SYSTEM MENU 📋".center(60))
+        print("=" * 60)
+        print("1️⃣  Add New Item to Inventory")
+        print("2️⃣  Execute Sale Transaction")
+        print("3️⃣  View Complete Inventory")
+        print("4️⃣  Search for Specific Item")
+        print("5️⃣  Verify System Integrity")
+        print("6️⃣  View Authentication Records (Merkle Tree)")
+        print("7️⃣  Register New User")
+        print("8️⃣  Exit System")
+        print("-" * 60)
         
-        choice = input("Enter your choice: ")
+        choice = input("Enter your selection (1-8): ")
         
         if choice == "1":
-            uid = int(input("Enter UID: "))
-            brand = input("Enter Brand Name: ")
-            item_name = input("Enter Item Name: ")
-            price = float(input("Enter Price: "))
-            status = input("Enter Status (Available/Sold/etc.): ")
-            bc.add_block(uid, brand, item_name, price, status)
-            print("Block added to pending queue.")
+            print("\n📦 ADD NEW ITEM TO INVENTORY")
+            print("-" * 40)
+            try:
+                uid = int(input("Item UID: "))
+                brand = input("Brand Name: ")
+                item_name = input("Item Description: ")
+                price = float(input("Price (₹): "))
+                status = input("Status (Available/Reserved): ") or "Available"
+                
+                # Add block through verification process
+                bc.add_block(uid, brand, item_name, price, status)
+                print("\n🔄 Item submitted for verification and addition to inventory...")
+                time.sleep(2)  # Allow time for verification thread
+                
+            except ValueError:
+                print("❌ Invalid input. Please enter numeric values for UID and price.")
             
         elif choice == "2":
-            bc.print_blockchain()
+            print("\n💰 EXECUTE SALE TRANSACTION")
+            print("-" * 40)
+            try:
+                uid = int(input("Item UID to sell: "))
+                brand = input("Item Brand: ")
+                
+                # Process sale through verification
+                bc.execute_sale(uid, brand)
+                print("\n🔄 Sale transaction submitted for verification...")
+                time.sleep(2)  # Allow time for verification thread
+                
+            except ValueError:
+                print("❌ Invalid input. Please enter a numeric value for UID.")
             
         elif choice == "3":
-            if bc.validate_chain():
-                print("Blockchain is fully linked and valid!")
-            else:
-                print("Blockchain is broken!")
+            print("\n📊 COMPLETE INVENTORY LISTING")
+            print("-" * 40)
+            bc.print_blockchain()
             
         elif choice == "4":
-            print("Exiting...")
+            print("\n🔍 SEARCH FOR SPECIFIC ITEM")
+            print("-" * 40)
+            search_option = input("Search by (1) UID or (2) Brand? Enter 1 or 2: ")
+            
+            if search_option == "1":
+                try:
+                    uid = int(input("Enter Item UID: "))
+                    found = False
+                    
+                    for letter, head in sorted(bc.chains.items()):
+                        current = head
+                        while current:
+                            if current.uid == uid and "Genesis" not in current.brand:
+                                print(f"\n✅ Item Found:")
+                                print(f"  UID: {current.uid}")
+                                print(f"  Brand: {current.brand}")
+                                print(f"  Description: {current.item_name}")
+                                print(f"  Price: ₹{current.price}")
+                                print(f"  Status: {current.status}")
+                                print(f"  Date Added: {current.timestamp}")
+                                
+                                if current.status == "Sold":
+                                    print("  ✓ Sale verified by dual signatures")
+                                else:
+                                    print("  ✓ Item authenticity verified")
+                                found = True
+                                break
+                            current = current.next
+                        if found:
+                            break
+                    
+                    if not found:
+                        print("❌ No item found with that UID.")
+                        
+                except ValueError:
+                    print("❌ Invalid input. Please enter a numeric UID.")
+                    
+            elif search_option == "2":
+                brand_search = input("Enter Brand Name (or part of name): ").lower()
+                found_items = []
+                
+                for letter, head in sorted(bc.chains.items()):
+                    current = head
+                    while current:
+                        if "Genesis" not in current.brand and brand_search in current.brand.lower():
+                            found_items.append(current)
+                        current = current.next
+                
+                if found_items:
+                    print(f"\n✅ Found {len(found_items)} items matching '{brand_search}':")
+                    for idx, item in enumerate(found_items, 1):
+                        print(f"\n  Item {idx}:")
+                        print(f"  UID: {item.uid}")
+                        print(f"  Brand: {item.brand}")
+                        print(f"  Description: {item.item_name}")
+                        print(f"  Price: ₹{item.price}")
+                        print(f"  Status: {item.status}")
+                        print(f"  Date Added: {item.timestamp}")
+                else:
+                    print(f"❌ No items found matching '{brand_search}'.")
+            else:
+                print("❌ Invalid option selected.")
+                
+        elif choice == "5":
+            print("\n🔐 SYSTEM INTEGRITY VERIFICATION")
+            print("-" * 40)
+            
+            print("Verifying blockchain structural integrity...")
+            chain_valid = bc.validate_chain()
+            
+            print("Verifying cryptographic signatures...")
+            signatures_valid = bc.verify_block_signatures()
+            
+            print("Verifying Merkle tree integrity...")
+            merkle_valid = bc.verify_merkle_tree()
+            
+            if chain_valid and signatures_valid and merkle_valid:
+                print("\n✅ FULL SYSTEM VERIFICATION PASSED")
+                print("🔒 All data integrity checks successful")
+            else:
+                print("\n⚠️ VERIFICATION ISSUES DETECTED")
+                if not chain_valid:
+                    print("❌ Blockchain structure has inconsistencies")
+                if not signatures_valid:
+                    print("❌ One or more cryptographic signatures are invalid")
+                if not merkle_valid:
+                    print("❌ Merkle tree authentication records are corrupted")
+            
+        elif choice == "6":
+            print("\n🌳 AUTHENTICATION RECORDS (MERKLE TREE)")
+            print("-" * 40)
+            bc.print_merkle_tree()
+            
+            verify = input("\nVerify Merkle tree integrity? (y/n): ").lower() == 'y'
+            if verify:
+                if bc.verify_merkle_tree():
+                    print("✅ Merkle tree verification successful")
+                else:
+                    print("❌ Merkle tree verification failed")
+            
+        elif choice == "7":
+            print("\n👤 REGISTER NEW USER")
+            print("-" * 40)
+            
+            from signatures import Keys
+            
+            name = input("Enter user name: ")
+            role = input("User role (employee/customer): ").lower()
+            
+            if role not in ["employee", "customer"]:
+                print("❌ Invalid role! Please enter 'employee' or 'customer'.")
+                continue
+                
+            password = getpass.getpass("Enter a secure password: ")
+            confirm_password = getpass.getpass("Confirm password: ")
+            
+            if password != confirm_password:
+                print("❌ Passwords do not match!")
+                continue
+                
+            try:
+                user = Keys(name, role, password)
+                user.add_to_json()
+                print(f"\n✅ {role.capitalize()} '{name}' successfully registered!")
+                print("🔑 Cryptographic keys generated and securely stored")
+            except Exception as e:
+                print(f"❌ Error during registration: {e}")
+            
+        elif choice == "8":
+            print("\n👋 Thank you for using the Blockchain Inventory System")
+            print("Exiting securely...")
             break
-        
+            
         else:
-            print("Invalid choice. Please try again.")
+            print("❌ Invalid choice. Please enter a number between 1 and 8.")
         
-        # Give the verification thread some time to process pending blocks
-        time.sleep(3)
+        # Add a pause before returning to the menu
+        input("\nPress Enter to continue...")
+
+
+if __name__ == "__main__":
+    # Make sure the profiles directory exists
+    import os
+    os.makedirs("./profiles", exist_ok=True)
+    
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n🛑 Program interrupted. Exiting securely...")
+    except Exception as e:
+        print(f"\n❌ An unexpected error occurred: {e}")
+        print("The system has been terminated to protect data integrity.")
 
 if __name__ == "__main__":
     main()

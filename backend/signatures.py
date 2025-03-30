@@ -7,7 +7,8 @@ import hashlib
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from blspy import PrivateKey, G2Element, G1Element
+from blspy import PrivateKey, G2Element, G1Element, PublicKeyMPL as PublicKey, AugSchemeMPL
+from collections import deque
 
 BLS_GROUP_ORDER = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 
@@ -55,7 +56,7 @@ class Keys:
 
     def add_to_json(self):
         """Stores user data securely in a JSON file."""
-        filename = f"{self.role}s.json"
+        filename = f"./profiles/{self.role}s.json"
         data_entry = {
             "name": self.name,
             "hashed_password": self.hashed_password,
@@ -75,7 +76,7 @@ class Keys:
     @staticmethod
     def authenticate_and_decrypt(name, role, input_password):
         """Authenticates a user and decrypts their private key if credentials match."""
-        filename = f"{role}s.json"
+        filename = f"./profiles/{role}s.json"
         try:
             with open(filename, "r") as file:
                 users = json.load(file)
@@ -100,8 +101,9 @@ class Keys:
                     cipher = Cipher(algorithms.AES(encryption_key), modes.GCM(nonce, tag))
                     decryptor = cipher.decryptor()
                     private_key = decryptor.update(ciphertext) + decryptor.finalize()
+                    public_key = base64.b64decode(user["public_key"]) 
                     print("\n🔓 Private Key Successfully Retrieved!")
-                    return private_key.hex()
+                    return private_key.hex(), public_key
                 else:
                     print("❌ Incorrect password!")
                     return None
@@ -122,19 +124,23 @@ class Keys:
 class Signing:
     @staticmethod
     def sign_data(name, role, password, data):
-        priv_key_hex = Keys.authenticate_and_decrypt(name, role, password)
+        priv_key_hex, public_key = Keys.authenticate_and_decrypt(name, role, password)
         if priv_key_hex is None:
             print("❌ Authentication failed. Unable to sign data.")
             return None
         else:
             private_key = PrivateKey.from_bytes(bytes.fromhex(priv_key_hex))
-            signature = private_key.sign(data.encode())
-            return base64.b64encode(bytes(signature)).decode()
+            signature = AugSchemeMPL.sign(private_key, data.encode())
+            
+            # Convert public key to base64 before adding to Merkle tree
+            public_key_b64 = base64.b64encode(public_key).decode()
+            
+            return base64.b64encode(bytes(signature)).decode(), public_key_b64
     
     @staticmethod
     def sign_data_dual(emp_name, emp_password, cust_name, cust_password, data):
-        emp_private_key_hex = Keys.authenticate_and_decrypt(emp_name, "employee", emp_password)
-        cust_private_key_hex = Keys.authenticate_and_decrypt(cust_name, "customer", cust_password)
+        emp_private_key_hex, emp_public_key = Keys.authenticate_and_decrypt(emp_name, "employee", emp_password)
+        cust_private_key_hex, cust_public_key = Keys.authenticate_and_decrypt(cust_name, "customer", cust_password)
 
         if not emp_private_key_hex or not cust_private_key_hex:
             print("❌ Authentication failed for one or both users. Unable to sign data.")
@@ -143,19 +149,24 @@ class Signing:
         emp_private_key = PrivateKey.from_bytes(bytes.fromhex(emp_private_key_hex))
         cust_private_key = PrivateKey.from_bytes(bytes.fromhex(cust_private_key_hex))
 
-        emp_signature = emp_private_key.sign(data.encode())
-        cust_signature = cust_private_key.sign(data.encode())
+        emp_signature = AugSchemeMPL.sign(emp_private_key, data.encode())
+        cust_signature = AugSchemeMPL.sign(cust_private_key, data.encode())
+
+        agg_pub_key = emp_public_key + cust_public_key
+        agg_pub_key_b64 = base64.b64encode(agg_pub_key).decode()
         
-        aggregated_signature = G2Element.aggregate([emp_signature, cust_signature])
-        return base64.b64encode(bytes(aggregated_signature)).decode()
+        aggregated_signature = AugSchemeMPL.aggregate([emp_signature, cust_signature])
+
+        return base64.b64encode(bytes(aggregated_signature)).decode(), agg_pub_key_b64
     
     @staticmethod
     def verify_signature(public_key_b64, data, signature_b64):
         """Verifies if the given signature is valid for the provided data and public key."""
-        public_key = G1Element.from_bytes(base64.b64decode(public_key_b64))
+        public_key = PublicKey.from_bytes(base64.b64decode(public_key_b64))
         signature = G2Element.from_bytes(base64.b64decode(signature_b64))
-        
-        return signature.verify(public_key, data.encode())
+
+        # Verify using AugSchemeMPL
+        return AugSchemeMPL.verify(public_key, data.encode(), signature)
 
 class MerkleNode:
     def __init__(self, value):
@@ -170,7 +181,21 @@ class MerkleTree:
         self.root = None
 
     def add_block_keys(self, creation_pubkey_b64, sale_pubkey_b64=None):
-        """ Adds new public key pair to the tree and rebuilds it. """
+        """ 
+        Adds new public key pair to the tree or updates an existing entry.
+        If creation_pubkey_b64 already exists with a None sale key, 
+        and sale_pubkey_b64 is provided, update the existing tuple.
+        """
+        # First, check if creation_pubkey_b64 already exists with None sale key
+        for i, (existing_creation_key, existing_sale_key) in enumerate(self.public_keys):
+            if existing_creation_key == creation_pubkey_b64 and existing_sale_key == "":
+                # If sale_pubkey_b64 is provided, update the existing tuple
+                if sale_pubkey_b64 is not None:
+                    self.public_keys[i] = (existing_creation_key, sale_pubkey_b64)
+                    self._build_merkle_tree()
+                return
+
+        # If no existing entry found or no update made, append new tuple
         self.public_keys.append((creation_pubkey_b64, sale_pubkey_b64 or ""))
         self._build_merkle_tree()
 
@@ -211,7 +236,36 @@ class MerkleTree:
 
         self.root = nodes[0]  # Final root node
 
-from collections import deque
+    def verify_merkle(self):
+        """ Verifies the Merkle Tree by recomputing hashes from leaf to root. """
+        if not self.root or not self.public_keys:
+            return False  # No tree to verify
+        
+        # Step 1: Reconstruct leaf nodes
+        nodes = []
+        for creation_key, sale_key in self.public_keys:
+            node0_hash = hashlib.sha256(creation_key.encode()).hexdigest()
+            node1_hash = hashlib.sha256(sale_key.encode()).hexdigest()
+            parent_hash = hashlib.sha256((creation_key + sale_key).encode()).hexdigest()
+            nodes.append(parent_hash)
+        
+        # Step 2: Rebuild the tree upwards
+        while len(nodes) > 1:
+            new_level = []
+            if len(nodes) % 2 != 0:
+                nodes.append(nodes[-1])  # Duplicate last node if odd number
+            
+            for i in range(0, len(nodes), 2):
+                combined_hash = hashlib.sha256((nodes[i] + nodes[i+1]).encode()).hexdigest()
+                new_level.append(combined_hash)
+            
+            nodes = new_level  # Move up a level
+        
+        # Step 3: Compare the computed root with stored root
+        return nodes[0] == self.root.data
+
+
+
 
 def print_merkle_tree(root):
     """Prints the Merkle tree in a level-wise format."""
