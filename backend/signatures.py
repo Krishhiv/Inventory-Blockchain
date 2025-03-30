@@ -130,7 +130,8 @@ class Signing:
             return None
         else:
             private_key = PrivateKey.from_bytes(bytes.fromhex(priv_key_hex))
-            signature = AugSchemeMPL.sign(private_key, data.encode())
+            message = data.encode()
+            signature = AugSchemeMPL.sign(private_key, message)
             
             # Convert public key to base64 before adding to Merkle tree
             public_key_b64 = base64.b64encode(public_key).decode()
@@ -146,28 +147,71 @@ class Signing:
             print("❌ Authentication failed for one or both users. Unable to sign data.")
             return None
         
+        message = data.encode()
+        
+        # Create proper private key objects
         emp_private_key = PrivateKey.from_bytes(bytes.fromhex(emp_private_key_hex))
         cust_private_key = PrivateKey.from_bytes(bytes.fromhex(cust_private_key_hex))
-
-        emp_signature = AugSchemeMPL.sign(emp_private_key, data.encode())
-        cust_signature = AugSchemeMPL.sign(cust_private_key, data.encode())
-
-        agg_pub_key = emp_public_key + cust_public_key
-        agg_pub_key_b64 = base64.b64encode(agg_pub_key).decode()
         
-        aggregated_signature = AugSchemeMPL.aggregate([emp_signature, cust_signature])
-
-        return base64.b64encode(bytes(aggregated_signature)).decode(), agg_pub_key_b64
+        # Get public keys from private keys to ensure consistency
+        emp_pub = emp_private_key.get_g1()
+        cust_pub = cust_private_key.get_g1()
+        
+        # Sign the message with each key using AugSchemeMPL
+        emp_signature = AugSchemeMPL.sign(emp_private_key, message)
+        cust_signature = AugSchemeMPL.sign(cust_private_key, message)
+        
+        # Aggregate signatures in the correct order
+        signatures = [emp_signature, cust_signature]
+        aggregated_signature = AugSchemeMPL.aggregate(signatures)
+        
+        # Store the PUBLIC KEYS in the correct order for verification
+        pub_keys = [emp_pub, cust_pub]
+        
+        # Pack both public keys into a special format for the verifier
+        # This is critical - we need to store the individual keys, not just their sum
+        packed_pub_keys = json.dumps([
+            base64.b64encode(bytes(emp_pub)).decode(),
+            base64.b64encode(bytes(cust_pub)).decode()
+        ])
+        
+        return (
+            base64.b64encode(bytes(aggregated_signature)).decode(), 
+            packed_pub_keys  # This is now a JSON string containing both public keys
+        )
     
     @staticmethod
-    def verify_signature(public_key_b64, data, signature_b64):
+    def verify_signature(public_key_data, data, signature_b64):
         """Verifies if the given signature is valid for the provided data and public key."""
-        public_key = PublicKey.from_bytes(base64.b64decode(public_key_b64))
+        message = data.encode()
         signature = G2Element.from_bytes(base64.b64decode(signature_b64))
-
-        # Verify using AugSchemeMPL
-        return AugSchemeMPL.verify(public_key, data.encode(), signature)
-
+        
+        # Check if this is a single key or a JSON-packed array of keys
+        try:
+            # Try to parse as JSON - this would be the case for dual signatures
+            pub_key_array = json.loads(public_key_data)
+            if isinstance(pub_key_array, list) and len(pub_key_array) > 1:
+                # This is an aggregated signature case
+                print("Detected multi-signature format...")
+                pub_keys = [G1Element.from_bytes(base64.b64decode(pk)) for pk in pub_key_array]
+                result = AugSchemeMPL.aggregate_verify(pub_keys, [message] * len(pub_keys), signature)
+                return result
+        except (json.JSONDecodeError, TypeError):
+            # Not JSON, so treat as a single key
+            pass
+            
+        # Handle regular single signature case
+        try:
+            public_key = PublicKey.from_bytes(base64.b64decode(public_key_data))
+            return AugSchemeMPL.verify(public_key, message, signature)
+        except Exception as e:
+            print(f"Single signature verification error: {str(e)}")
+            try:
+                public_key = G1Element.from_bytes(base64.b64decode(public_key_data))
+                return AugSchemeMPL.verify(public_key, message, signature)
+            except Exception as e:
+                print(f"G1Element verification error: {str(e)}")
+                return False
 class MerkleNode:
     def __init__(self, value):
         self.data = value
@@ -311,52 +355,186 @@ def print_merkle_tree_recursive(node, level=0):
         print_merkle_tree_recursive(node.left, level + 1)
         print_merkle_tree_recursive(node.right, level + 1)
 
-
 # ================================
 # 🌟 Menu-Based `main()` Function
 # ================================
 def main():
+    import os
+    
+    # Create profiles directory if it doesn't exist
+    if not os.path.exists('./profiles'):
+        os.makedirs('./profiles')
+    
     while True:
-        print("\n🔐 Secure Key Management System")
-        print("1️⃣ Register (New Employee/Customer)")
-        print("2️⃣ Authenticate & Retrieve Private Key")
-        print("3️⃣ Exit")
+        print("\n🔐 BLS Signature Testing System")
+        print("=" * 40)
+        print("1️⃣ Register New User (Employee/Customer)")
+        print("2️⃣ Test Single Signature")
+        print("3️⃣ Test Dual Signature")
+        print("4️⃣ Verify a Signature")
+        print("5️⃣ Merkle Tree Operations")
+        print("6️⃣ Exit")
         choice = input("\nEnter your choice: ")
 
         if choice == "1":
-            name = input("Enter your name: ")
-            role = input("Are you an employee or customer? ").lower()
-
+            # Register a new user
+            name = input("Enter username: ")
+            role = input("Role (employee/customer): ").lower()
+            
             if role not in ["employee", "customer"]:
                 print("❌ Invalid role! Please enter 'employee' or 'customer'.")
                 continue
-
+                
             password = getpass.getpass("Enter a secure password: ")
             user = Keys(name, role, password)
             user.add_to_json()
-
-            print("\n✅ User successfully registered! Your keys are stored securely.")
+            
+            print(f"\n✅ {role.capitalize()} '{name}' successfully registered!")
 
         elif choice == "2":
-            name = input("Enter your name: ")
-            role = input("Are you an employee or customer? ").lower()
-
+            # Test single signature
+            name = input("Enter username: ")
+            role = input("Role (employee/customer): ").lower()
+            
             if role not in ["employee", "customer"]:
                 print("❌ Invalid role! Please enter 'employee' or 'customer'.")
                 continue
-
-            password = getpass.getpass("Enter your password: ")
-            private_key = Keys.authenticate_and_decrypt(name, role, password)
-
-            if private_key:
-                print(f"\n🔑 Your Private Key: {private_key}")
+                
+            password = getpass.getpass("Enter password: ")
+            data = input("Enter data to sign: ")
+            
+            print("\n🔑 Signing data...")
+            signature_result = Signing.sign_data(name, role, password, data)
+            
+            if signature_result:
+                signature, public_key = signature_result
+                print("\n✅ Signature created successfully!")
+                print(f"Signature: {signature[:20]}...")
+                print(f"Public Key: {public_key[:20]}...")
+                
+                # Verify immediately
+                if Signing.verify_signature(public_key, data, signature):
+                    print("✅ Signature verified successfully!")
+                else:
+                    print("❌ Signature verification failed!")
+            else:
+                print("❌ Failed to create signature.")
 
         elif choice == "3":
-            print("\n👋 Exiting Secure Key Management System. Stay Safe!")
+            # Test dual signature
+            print("\n🔄 Dual Signature Test (Employee + Customer)")
+            emp_name = input("Enter employee name: ")
+            emp_password = getpass.getpass("Enter employee password: ")
+            
+            cust_name = input("Enter customer name: ")
+            cust_password = getpass.getpass("Enter customer password: ")
+            
+            data = input("Enter data to sign: ")
+            
+            print("\n🔑 Creating dual signature...")
+            dual_result = Signing.sign_data_dual(emp_name, emp_password, cust_name, cust_password, data)
+            
+            if dual_result:
+                agg_signature, agg_pubkey = dual_result
+                print("\n✅ Dual signature created successfully!")
+                print(f"Aggregated Signature: {agg_signature[:20]}...")
+                print(f"Aggregated Public Key: {agg_pubkey[:20]}...")
+                
+                # Verify immediately
+                print("\n🔍 Verifying dual signature...")
+                if Signing.verify_signature(agg_pubkey, data, agg_signature):
+                    print("✅ Dual signature verified successfully!")
+                else:
+                    print("❌ Dual signature verification failed!")
+                    print("\nDebugging information:")
+                    print(f"Data being verified: '{data}'")
+                    try:
+                        # For debugging - try both verification approaches
+                        signature = G2Element.from_bytes(base64.b64decode(agg_signature))
+                        pubkey1 = PublicKey.from_bytes(base64.b64decode(agg_pubkey))
+                        result1 = AugSchemeMPL.verify(pubkey1, data.encode(), signature)
+                        print(f"Verify using PublicKey: {result1}")
+                    except Exception as e:
+                        print(f"PublicKey verification error: {str(e)}")
+                    
+                    try:
+                        signature = G2Element.from_bytes(base64.b64decode(agg_signature))
+                        pubkey2 = G1Element.from_bytes(base64.b64decode(agg_pubkey))
+                        result2 = AugSchemeMPL.verify(pubkey2, data.encode(), signature)
+                        print(f"Verify using G1Element: {result2}")
+                    except Exception as e:
+                        print(f"G1Element verification error: {str(e)}")
+            else:
+                print("❌ Failed to create dual signature.")
+
+        elif choice == "4":
+            # Verify an existing signature
+            public_key_b64 = input("Enter public key (base64): ")
+            signature_b64 = input("Enter signature (base64): ")
+            data = input("Enter the original data: ")
+            
+            print("\n🔍 Verifying signature...")
+            if Signing.verify_signature(public_key_b64, data, signature_b64):
+                print("✅ Signature verified successfully!")
+            else:
+                print("❌ Signature verification failed!")
+
+        elif choice == "5":
+            # Merkle Tree operations
+            print("\n🌲 Merkle Tree Operations")
+            print("1. Create/Update Merkle Tree")
+            print("2. Print Merkle Tree")
+            print("3. Verify Merkle Tree")
+            print("4. Back to Main Menu")
+            tree_choice = input("\nEnter your choice: ")
+            
+            if tree_choice == "1":
+                tree = MerkleTree()
+                num_entries = int(input("How many key pairs to add? "))
+                
+                for i in range(num_entries):
+                    creation_key = input(f"Entry {i+1} - Creation Public Key: ")
+                    sale_key = input(f"Entry {i+1} - Sale Public Key (leave empty if none): ")
+                    tree.add_block_keys(creation_key, sale_key if sale_key else None)
+                
+                print("✅ Merkle Tree created/updated successfully!")
+                
+            elif tree_choice == "2":
+                tree = MerkleTree()
+                # For demo purposes, add some sample data
+                tree.add_block_keys("Sample_Creation_Key_1", "Sample_Sale_Key_1")
+                tree.add_block_keys("Sample_Creation_Key_2", "Sample_Sale_Key_2")
+                
+                print("\nHierarchical View:")
+                print_merkle_tree_recursive(tree.root)
+                
+                print("\nLevel-wise View:")
+                print_merkle_tree(tree.root)
+                
+            elif tree_choice == "3":
+                tree = MerkleTree()
+                # For demo purposes, add some sample data
+                tree.add_block_keys("Sample_Creation_Key_1", "Sample_Sale_Key_1")
+                tree.add_block_keys("Sample_Creation_Key_2", "Sample_Sale_Key_2")
+                
+                if tree.verify_merkle():
+                    print("✅ Merkle Tree verification successful!")
+                else:
+                    print("❌ Merkle Tree verification failed!")
+            
+            elif tree_choice == "4":
+                continue
+                
+            else:
+                print("❌ Invalid choice!")
+
+        elif choice == "6":
+            print("\n👋 Exiting BLS Signature Testing System. Goodbye!")
             break
 
         else:
-            print("❌ Invalid choice! Please enter 1, 2, or 3.")
+            print("❌ Invalid choice! Please enter a number between 1 and 6.")
+
 
 # Run the program
 if __name__ == "__main__":

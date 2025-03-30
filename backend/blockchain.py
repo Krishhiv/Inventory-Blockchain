@@ -33,6 +33,39 @@ class Block:
         )
         return hashlib.sha256(block_data.encode()).hexdigest()
 
+    def get_signable_data(self, use_original_status=False):
+        """Returns the data that should be signed, excluding prevHash"""
+        # For sale updates, use the original "Available" status when verifying creation signature
+        status_to_use = "Available" if use_original_status else self.status
+        return (
+            str(self.uid) + self.brand + self.item_name + str(self.price) +
+            status_to_use + str(self.timestamp)
+        )
+
+    def verify_creation_signature(self):
+        """Verify the creation signature for this block"""
+        if not self.creation_signature or not self.creation_pub:
+            print("❌ Missing creation signature or public key")
+            return False
+        try:
+            # Use original "Available" status when verifying creation signature
+            return Signing.verify_signature(self.creation_pub, self.get_signable_data(use_original_status=True), self.creation_signature)
+        except Exception as e:
+            print(f"❌ Creation signature verification error: {e}")
+            return False
+
+    def verify_sale_signature(self):
+        """Verify the sale signature for this block"""
+        if not self.sale_agg_signature or not self.sale_agg_pub:
+            print("❌ Missing sale signature or public key")
+            return False
+        try:
+            # Use current "Sold" status when verifying sale signature
+            return Signing.verify_signature(self.sale_agg_pub, self.get_signable_data(use_original_status=False), self.sale_agg_signature)
+        except Exception as e:
+            print(f"❌ Sale signature verification error: {e}")
+            return False
+
 class Blockchain:
     def __init__(self):
         self.chains = {}
@@ -64,12 +97,6 @@ class Blockchain:
         # Calculate the block's hash
         new_block.hash = new_block.calculate_hash()
         
-        # Get the data that will be signed
-        block_data = (
-            str(new_block.uid) + new_block.brand + new_block.item_name + str(new_block.price) +
-            new_block.status + str(new_block.timestamp) + new_block.prevHash
-        )
-        
         # Get user credentials for signing
         name = input("Enter your name: ")
         user_role = input("Are you an employee or customer? ").lower()
@@ -81,7 +108,7 @@ class Blockchain:
         password = getpass.getpass("Enter your password: ")
 
         # Sign the block with user's private key
-        signature_result = Signing.sign_data(name, user_role, password, block_data)
+        signature_result = Signing.sign_data(name, user_role, password, new_block.get_signable_data())
         
         if not signature_result:
             print("❌ Failed to sign the block. Block not added.")
@@ -110,12 +137,6 @@ class Blockchain:
         if block_to_sell.status == "Sold":
             print("❌ Item is already sold.")
             return
-        
-        # Get the data that will be signed
-        block_data = (
-            str(block_to_sell.uid) + block_to_sell.brand + block_to_sell.item_name + str(block_to_sell.price) +
-            block_to_sell.status + str(block_to_sell.timestamp) + block_to_sell.prevHash
-        )
 
         # Step 2: Take inputs for employee and customer credentials
         emp_name = input("Enter the name of the employee selling this item: ")
@@ -149,21 +170,22 @@ class Blockchain:
         )
         
         # Copy existing block properties
-        sale_update_block.hash = block_to_sell.hash
         sale_update_block.timestamp = block_to_sell.timestamp
         sale_update_block.creation_signature = block_to_sell.creation_signature
         sale_update_block.creation_pub = block_to_sell.creation_pub
         
         # Add new sale signatures
         signature_result = Signing.sign_data_dual(
-            emp_name, emp_password, cust_name, cust_password, block_data
-        )
+            emp_name, emp_password, cust_name, cust_password, sale_update_block.get_signable_data())
         
         if not signature_result:
             print("❌ Failed to create signatures for the sale. Sale canceled.")
             return
             
         sale_update_block.sale_agg_signature, sale_update_block.sale_agg_pub = signature_result
+        
+        # Recalculate hash after all properties are set
+        sale_update_block.hash = sale_update_block.calculate_hash()
         
         # Add the update to the pending queue for verification
         self.pending_blocks.put(sale_update_block)
@@ -202,13 +224,13 @@ class Blockchain:
                     continue
                     
                 # Step 2: Verify creation signature
-                if not self.verify_creation_signature(block):
+                if not block.verify_creation_signature():
                     print(f"❌ Creation signature verification failed for {block.brand} - UID: {block.uid}")
                     continue
                     
                 # Step 3: If this is a sale update (has sale signature), verify it
                 if block.sale_agg_signature and block.sale_agg_pub:
-                    if not self.verify_sale_signature(block):
+                    if not block.verify_sale_signature():
                         print(f"❌ Sale signature verification failed for {block.brand} - UID: {block.uid}")
                         continue
                 
@@ -223,44 +245,6 @@ class Blockchain:
     def verify_block_hash(self, block):
         """Verify that the block's hash is calculated correctly"""
         return block.hash == block.calculate_hash()
-
-    def verify_creation_signature(self, block):
-        """Verify the creation signature for a block"""
-        if not block.creation_signature or not block.creation_pub:
-            print("❌ Missing creation signature or public key")
-            return False
-            
-        # Reconstruct the data that was signed
-        block_data = (
-            str(block.uid) + block.brand + block.item_name + str(block.price) +
-            block.status + str(block.timestamp) + block.prevHash
-        )
-        
-        # Verify the signature using the Signing class
-        try:
-            return Signing.verify_signature(block.creation_pub, block_data, block.creation_signature)
-        except Exception as e:
-            print(f"❌ Signature verification error: {e}")
-            return False
-
-    def verify_sale_signature(self, block):
-        """Verify the aggregated sale signature"""
-        if not block.sale_agg_signature or not block.sale_agg_pub:
-            print("❌ Missing sale signature or public key")
-            return False
-            
-        # Reconstruct the data that was signed
-        block_data = (
-            str(block.uid) + block.brand + block.item_name + str(block.price) +
-            block.status + str(block.timestamp) + block.prevHash
-        )
-        
-        # Verify the aggregated signature using the Signing class
-        try:
-            return Signing.verify_signature(block.sale_agg_pub, block_data, block.sale_agg_signature)
-        except Exception as e:
-            print(f"❌ Sale signature verification error: {e}")
-            return False
 
     def commit_block(self, block):
         """Commit a verified block to the blockchain"""
@@ -277,10 +261,16 @@ class Blockchain:
                     current.sale_agg_signature = block.sale_agg_signature
                     current.sale_agg_pub = block.sale_agg_pub
                     
+                    # Recalculate hash after updating status and signatures
+                    current.hash = current.calculate_hash()
+                    
                     # Update the Merkle tree with sale information
                     self.merkle_tree.add_block_keys(current.creation_pub, current.sale_agg_pub)
                     
                     print(f"✅ Sale verified and recorded for {block.brand} - UID: {block.uid}")
+                    
+                    # Update chain linkages after the sale
+                    self.update_subsequent_prev_hashes(first_letter)
                     return
                 current = current.next
                 
@@ -288,46 +278,55 @@ class Blockchain:
             return
         
         # For new blocks (not sales), proceed with normal block addition
-        current = self.chains[first_letter]
-        
-        # Traverse to the last block in the chain
-        while current.next:
-            current = current.next
-
-        # Ensure correct linking before adding
-        block.prevHash = current.hash
-        block.hash = block.calculate_hash()  # Recalculate hash after updating prevHash
-        current.next = block  
+        if first_letter not in self.chains:
+            # If this is the first block for this letter, create a new chain
+            self.chains[first_letter] = block
+            block.prevHash = self.get_last_block_hash(first_letter)
+            block.hash = block.calculate_hash()
+        else:
+            # Add to existing chain
+            current = self.chains[first_letter]
+            while current.next:
+                current = current.next
+            block.prevHash = current.hash
+            block.hash = block.calculate_hash()
+            current.next = block
         
         # Update the Merkle tree with the new block's creation key
         self.merkle_tree.add_block_keys(block.creation_pub)
 
         print(f"✅ New block verified and added: {block.brand} - UID: {block.uid}")
 
-        # After adding the block, update the prevHash of genesis blocks of all subsequent letters
+        # After adding the block, update the prevHash of all blocks in subsequent chains
         self.update_subsequent_prev_hashes(first_letter)
 
     def update_subsequent_prev_hashes(self, starting_letter):
         """
-        Updates the prevHash of the genesis block of each subsequent letter's chain
-        and recalculates their hashes.
+        Updates the prevHash of all blocks in each subsequent chain when a new block is added or modified.
         """
-        # Start from the letter after the one where the block was added
-        current_letter = starting_letter
-        prev_last_block_hash = self.get_last_block_hash(current_letter)
+        # Get the last block hash of the chain we just modified
+        current_last_block = self.chains[starting_letter]
+        while current_last_block.next:
+            current_last_block = current_last_block.next
+        prev_last_block_hash = current_last_block.hash
 
-        # Iterate over all subsequent letters
-        next_letter = chr(ord(current_letter) + 1)
-        while next_letter <= 'Z':
-            if next_letter in self.chains:
-                # Update the prevHash of the genesis block of the next letter
-                next_genesis_block = self.chains[next_letter]
-                next_genesis_block.prevHash = prev_last_block_hash
-                # Recalculate the hash of the genesis block since prevHash changed
-                next_genesis_block.hash = next_genesis_block.calculate_hash()
-                # Update the prev_last_block_hash for the next iteration
-                prev_last_block_hash = self.get_last_block_hash(next_letter)
-            next_letter = chr(ord(next_letter) + 1)
+        # Update all subsequent chains
+        for letter in sorted(self.chains.keys()):
+            if letter > starting_letter:
+                # Update genesis block
+                genesis_block = self.chains[letter]
+                genesis_block.prevHash = prev_last_block_hash
+                genesis_block.hash = genesis_block.calculate_hash()
+                
+                # Update all subsequent blocks in this chain
+                current = genesis_block
+                while current.next:
+                    current.next.prevHash = current.hash
+                    current.next.hash = current.next.calculate_hash()
+                    current = current.next
+                
+                # Update prev_last_block_hash for the next chain
+                prev_last_block_hash = current.hash
 
     def validate_chain(self):
         """ Validates entire blockchain integrity by checking previous hashes """
@@ -403,18 +402,10 @@ class Blockchain:
                     current = current.next
                     continue
                 
-                # Reconstruct the original signed data
-                block_data = (
-                    str(current.uid) + current.brand + current.item_name + str(current.price) +
-                    current.status + str(current.timestamp) + current.prevHash
-                )
-                
                 # Verify creation signature
                 if current.creation_signature and current.creation_pub:
                     try:
-                        creation_valid = Signing.verify_signature(
-                            current.creation_pub, block_data, current.creation_signature
-                        )
+                        creation_valid = current.verify_creation_signature()
                         if not creation_valid:
                             print(f"❌ Creation signature invalid: {current.brand} - UID: {current.uid}")
                             all_valid = False
@@ -429,9 +420,7 @@ class Blockchain:
                 if current.status == "Sold":
                     if current.sale_agg_signature and current.sale_agg_pub:
                         try:
-                            sale_valid = Signing.verify_signature(
-                                current.sale_agg_pub, block_data, current.sale_agg_signature
-                            )
+                            sale_valid = current.verify_sale_signature()
                             if not sale_valid:
                                 print(f"❌ Sale signature invalid: {current.brand} - UID: {current.uid}")
                                 all_valid = False

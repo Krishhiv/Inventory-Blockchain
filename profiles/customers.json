@@ -5,5 +5,12 @@
         "public_key": "iWLpD6mn9YcLNH/6hjgdsVfbPRKIjTc5FPnPkwvZW3HcVYjk8Mc/Zt+seENJ90oZ",
         "encrypted_private_key": "x/dUn5BPa78I4eB0E95WWJZn1b3+zh9Q3nNqxdLHSNYhBIqSQwX+bwGxL75xXiTSmICgBPSNbjDJJV3P",
         "salt": "$2b$12$TV4DZTeCsarBNt7qsXLYCu"
+    },
+    {
+        "name": "ansh",
+        "hashed_password": "$2b$12$LdtuNp5zqlb07nLyMO8k0u3pA7PHL9RzccTzfpGo99qd5ytru43ue",
+        "public_key": "t0i6WrD6yU1PEP7K4h8IPoG13Po+FfMRNrd5/CI4+3NcP6Rm19+as1IoAmhTmewc",
+        "encrypted_private_key": "nHLkMBzth/uUE/q9U/EOYYgJi5mnnicxvESy+tW1igtjl3lnqr3HhEMqhEC8U1sG8JhlN05SR198GJT3",
+        "salt": "$2b$12$LdtuNp5zqlb07nLyMO8k0u"
     }
 ]
