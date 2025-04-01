@@ -98,17 +98,11 @@ class Blockchain:
         new_block.hash = new_block.calculate_hash()
         
         # Get user credentials for signing
-        name = input("Enter your name: ")
-        user_role = input("Are you an employee or customer? ").lower()
-
-        if user_role not in ["employee", "customer"]:
-            print("❌ Invalid role! Please enter 'employee' or 'customer'.")
-            return
-
+        name = input("Enter employee name: ")
         password = getpass.getpass("Enter your password: ")
 
         # Sign the block with user's private key
-        signature_result = Signing.sign_data(name, user_role, password, new_block.get_signable_data())
+        signature_result = Signing.sign_data(name, "employee", password, new_block.get_signable_data())
         
         if not signature_result:
             print("❌ Failed to sign the block. Block not added.")
@@ -137,7 +131,12 @@ class Blockchain:
         if block_to_sell.status == "Sold":
             print("❌ Item is already sold.")
             return
-
+        
+        print()
+        print(f"Selling {block_to_sell.brand} {block_to_sell.item_name} - UID: {block_to_sell.uid}")
+        print(f"Cost: {block_to_sell.price}")
+        print()
+        
         # Step 2: Take inputs for employee and customer credentials
         emp_name = input("Enter the name of the employee selling this item: ")
         emp_password = getpass.getpass(f"Enter Employee {emp_name}'s password: ")
@@ -159,13 +158,16 @@ class Blockchain:
         else:
             cust_password = getpass.getpass(f"Enter Customer {cust_name}'s password: ")
 
+        # Update the original block's status first
+        block_to_sell.status = "Sold"
+        
         # Create a sale update block (clone of the block to be sold with additional signatures)
         sale_update_block = Block(
             uid=block_to_sell.uid,
             brand=block_to_sell.brand,
             item_name=block_to_sell.item_name,
             price=block_to_sell.price,
-            status="Sold",
+            status="Sold",  # Ensure this is set to "Sold"
             prevHash=block_to_sell.prevHash
         )
         
@@ -179,6 +181,8 @@ class Blockchain:
             emp_name, emp_password, cust_name, cust_password, sale_update_block.get_signable_data())
         
         if not signature_result:
+            # Revert the status if signature fails
+            block_to_sell.status = "Available"
             print("❌ Failed to create signatures for the sale. Sale canceled.")
             return
             
@@ -257,17 +261,16 @@ class Blockchain:
             while current:
                 if current.uid == block.uid and current.brand == block.brand:
                     # Update existing block with sale information
-                    current.status = "Sold"
+                    current.status = "Sold"  # Ensure status is updated
                     current.sale_agg_signature = block.sale_agg_signature
                     current.sale_agg_pub = block.sale_agg_pub
-                    
-                    # Recalculate hash after updating status and signatures
-                    current.hash = current.calculate_hash()
+                    current.hash = current.calculate_hash()  # Recalculate hash after updates
                     
                     # Update the Merkle tree with sale information
                     self.merkle_tree.add_block_keys(current.creation_pub, current.sale_agg_pub)
                     
                     print(f"✅ Sale verified and recorded for {block.brand} - UID: {block.uid}")
+                    print(f"Status updated to: {current.status}")  # Add status confirmation
                     
                     # Update chain linkages after the sale
                     self.update_subsequent_prev_hashes(first_letter)
@@ -514,10 +517,9 @@ def main():
                 brand = input("Brand Name: ")
                 item_name = input("Item Description: ")
                 price = float(input("Price (₹): "))
-                status = input("Status (Available/Reserved): ") or "Available"
                 
                 # Add block through verification process
-                bc.add_block(uid, brand, item_name, price, status)
+                bc.add_block(uid, brand, item_name, price)
                 print("\n🔄 Item submitted for verification and addition to inventory...")
                 time.sleep(2)  # Allow time for verification thread
                 
