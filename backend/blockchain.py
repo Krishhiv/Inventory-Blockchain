@@ -73,6 +73,7 @@ class Blockchain:
         self.merkle_tree = MerkleTree()  # Create merkle_tree as an instance variable
         self.initialize_genesis_blocks()
         self.start_verification_thread()
+        self.start_heartbeat()
 
     def initialize_genesis_blocks(self):
         prev_hash = ""  # First genesis block has empty prevHash
@@ -460,6 +461,30 @@ class Blockchain:
     def start_verification_thread(self):
         thread = threading.Thread(target=self.verify_and_add_blocks, daemon=True)
         thread.start()
+
+    def start_heartbeat(self):
+        def heartbeat():
+            while True:
+                print("Running heartbeat check...")
+                # Verify blockchain integrity
+                if not self.validate_chain():
+                    print("❌ Blockchain integrity verification failed.")
+                if not self.verify_block_signatures():
+                    print("❌ Block signatures verification failed.")
+                if not self.verify_merkle_tree():
+                    print("❌ Merkle tree verification failed.")
+                
+                # Commit any pending blocks
+                while not self.pending_blocks.empty():
+                    block = self.pending_blocks.get()
+                    self.commit_block(block)
+                    print(f"✔️ Block {block.uid} committed.")
+                
+                # Wait for 5 minutes before running the next heartbeat check
+                time.sleep(300) # Input in seconds.
+
+        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        heartbeat_thread.start()
 
     def print_blockchain(self):
         for letter, head in sorted(self.chains.items()):

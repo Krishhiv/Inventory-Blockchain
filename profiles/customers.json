@@ -5,19 +5,5 @@
         "public_key": "iWLpD6mn9YcLNH/6hjgdsVfbPRKIjTc5FPnPkwvZW3HcVYjk8Mc/Zt+seENJ90oZ",
         "encrypted_private_key": "x/dUn5BPa78I4eB0E95WWJZn1b3+zh9Q3nNqxdLHSNYhBIqSQwX+bwGxL75xXiTSmICgBPSNbjDJJV3P",
         "salt": "$2b$12$TV4DZTeCsarBNt7qsXLYCu"
-    },
-    {
-        "name": "ansh",
-        "hashed_password": "$2b$12$LdtuNp5zqlb07nLyMO8k0u3pA7PHL9RzccTzfpGo99qd5ytru43ue",
-        "public_key": "t0i6WrD6yU1PEP7K4h8IPoG13Po+FfMRNrd5/CI4+3NcP6Rm19+as1IoAmhTmewc",
-        "encrypted_private_key": "nHLkMBzth/uUE/q9U/EOYYgJi5mnnicxvESy+tW1igtjl3lnqr3HhEMqhEC8U1sG8JhlN05SR198GJT3",
-        "salt": "$2b$12$LdtuNp5zqlb07nLyMO8k0u"
-    },
-    {
-        "name": "",
-        "hashed_password": "$2b$12$7VqFZR0B./aNRsPiKT5FRem/0Lu3X03AMsmm4E2T5Oxi3mZgNpmUq",
-        "public_key": "s9YC1MMR+uZal+PYZp4oxkSjDv/kYxshbxR76r/2a+tXY9I8SnzsezRoPsvPrPYP",
-        "encrypted_private_key": "Cni+mXl8ZJ7ztk1k/qQcJoJ1JO9eLA0nhu7m5XzF7pjWTyRY5MYu5/RQLtYefzpkIv95r6Y37QrCqsrN",
-        "salt": "$2b$12$7VqFZR0B./aNRsPiKT5FRe"
     }
 ]

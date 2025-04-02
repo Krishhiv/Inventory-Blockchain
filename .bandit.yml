@@ -1,0 +1,19 @@
+# Example Bandit configuration file
+exclude:
+  - "./venv"
+  - "./tests"
+  - "./docs"
+  - "./migrations"
+
+
+tests:
+  B101:  # Assert statements
+    severity: LOW
+    confidence: HIGH
+  B102:  # Use of exec
+    severity: HIGH
+    confidence: HIGH
+  B103:  # Set mutable default arguments
+    severity: MEDIUM
+    confidence: HIGH
+  # Add more tests as needed

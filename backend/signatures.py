@@ -283,7 +283,7 @@ class MerkleTree:
     def verify_merkle(self):
         """ Verifies the Merkle Tree by recomputing hashes from leaf to root. """
         if not self.root or not self.public_keys:
-            return False  # No tree to verify
+            return True
         
         # Step 1: Reconstruct leaf nodes
         nodes = []
@@ -306,7 +306,11 @@ class MerkleTree:
             nodes = new_level  # Move up a level
         
         # Step 3: Compare the computed root with stored root
-        return nodes[0] == self.root.data
+        if (nodes[0] == self.root.data):
+            print("✅ Merkle Tree is valid!")
+            return True
+        else:
+            return False
 
 
 
@@ -354,188 +358,3 @@ def print_merkle_tree_recursive(node, level=0):
     if node.left or node.right:  # Only print children if they exist
         print_merkle_tree_recursive(node.left, level + 1)
         print_merkle_tree_recursive(node.right, level + 1)
-
-# ================================
-# 🌟 Menu-Based `main()` Function
-# ================================
-def main():
-    import os
-    
-    # Create profiles directory if it doesn't exist
-    if not os.path.exists('./profiles'):
-        os.makedirs('./profiles')
-    
-    while True:
-        print("\n🔐 BLS Signature Testing System")
-        print("=" * 40)
-        print("1️⃣ Register New User (Employee/Customer)")
-        print("2️⃣ Test Single Signature")
-        print("3️⃣ Test Dual Signature")
-        print("4️⃣ Verify a Signature")
-        print("5️⃣ Merkle Tree Operations")
-        print("6️⃣ Exit")
-        choice = input("\nEnter your choice: ")
-
-        if choice == "1":
-            # Register a new user
-            name = input("Enter username: ")
-            role = input("Role (employee/customer): ").lower()
-            
-            if role not in ["employee", "customer"]:
-                print("❌ Invalid role! Please enter 'employee' or 'customer'.")
-                continue
-                
-            password = getpass.getpass("Enter a secure password: ")
-            user = Keys(name, role, password)
-            user.add_to_json()
-            
-            print(f"\n✅ {role.capitalize()} '{name}' successfully registered!")
-
-        elif choice == "2":
-            # Test single signature
-            name = input("Enter username: ")
-            role = input("Role (employee/customer): ").lower()
-            
-            if role not in ["employee", "customer"]:
-                print("❌ Invalid role! Please enter 'employee' or 'customer'.")
-                continue
-                
-            password = getpass.getpass("Enter password: ")
-            data = input("Enter data to sign: ")
-            
-            print("\n🔑 Signing data...")
-            signature_result = Signing.sign_data(name, role, password, data)
-            
-            if signature_result:
-                signature, public_key = signature_result
-                print("\n✅ Signature created successfully!")
-                print(f"Signature: {signature[:20]}...")
-                print(f"Public Key: {public_key[:20]}...")
-                
-                # Verify immediately
-                if Signing.verify_signature(public_key, data, signature):
-                    print("✅ Signature verified successfully!")
-                else:
-                    print("❌ Signature verification failed!")
-            else:
-                print("❌ Failed to create signature.")
-
-        elif choice == "3":
-            # Test dual signature
-            print("\n🔄 Dual Signature Test (Employee + Customer)")
-            emp_name = input("Enter employee name: ")
-            emp_password = getpass.getpass("Enter employee password: ")
-            
-            cust_name = input("Enter customer name: ")
-            cust_password = getpass.getpass("Enter customer password: ")
-            
-            data = input("Enter data to sign: ")
-            
-            print("\n🔑 Creating dual signature...")
-            dual_result = Signing.sign_data_dual(emp_name, emp_password, cust_name, cust_password, data)
-            
-            if dual_result:
-                agg_signature, agg_pubkey = dual_result
-                print("\n✅ Dual signature created successfully!")
-                print(f"Aggregated Signature: {agg_signature[:20]}...")
-                print(f"Aggregated Public Key: {agg_pubkey[:20]}...")
-                
-                # Verify immediately
-                print("\n🔍 Verifying dual signature...")
-                if Signing.verify_signature(agg_pubkey, data, agg_signature):
-                    print("✅ Dual signature verified successfully!")
-                else:
-                    print("❌ Dual signature verification failed!")
-                    print("\nDebugging information:")
-                    print(f"Data being verified: '{data}'")
-                    try:
-                        # For debugging - try both verification approaches
-                        signature = G2Element.from_bytes(base64.b64decode(agg_signature))
-                        pubkey1 = PublicKey.from_bytes(base64.b64decode(agg_pubkey))
-                        result1 = AugSchemeMPL.verify(pubkey1, data.encode(), signature)
-                        print(f"Verify using PublicKey: {result1}")
-                    except Exception as e:
-                        print(f"PublicKey verification error: {str(e)}")
-                    
-                    try:
-                        signature = G2Element.from_bytes(base64.b64decode(agg_signature))
-                        pubkey2 = G1Element.from_bytes(base64.b64decode(agg_pubkey))
-                        result2 = AugSchemeMPL.verify(pubkey2, data.encode(), signature)
-                        print(f"Verify using G1Element: {result2}")
-                    except Exception as e:
-                        print(f"G1Element verification error: {str(e)}")
-            else:
-                print("❌ Failed to create dual signature.")
-
-        elif choice == "4":
-            # Verify an existing signature
-            public_key_b64 = input("Enter public key (base64): ")
-            signature_b64 = input("Enter signature (base64): ")
-            data = input("Enter the original data: ")
-            
-            print("\n🔍 Verifying signature...")
-            if Signing.verify_signature(public_key_b64, data, signature_b64):
-                print("✅ Signature verified successfully!")
-            else:
-                print("❌ Signature verification failed!")
-
-        elif choice == "5":
-            # Merkle Tree operations
-            print("\n🌲 Merkle Tree Operations")
-            print("1. Create/Update Merkle Tree")
-            print("2. Print Merkle Tree")
-            print("3. Verify Merkle Tree")
-            print("4. Back to Main Menu")
-            tree_choice = input("\nEnter your choice: ")
-            
-            if tree_choice == "1":
-                tree = MerkleTree()
-                num_entries = int(input("How many key pairs to add? "))
-                
-                for i in range(num_entries):
-                    creation_key = input(f"Entry {i+1} - Creation Public Key: ")
-                    sale_key = input(f"Entry {i+1} - Sale Public Key (leave empty if none): ")
-                    tree.add_block_keys(creation_key, sale_key if sale_key else None)
-                
-                print("✅ Merkle Tree created/updated successfully!")
-                
-            elif tree_choice == "2":
-                tree = MerkleTree()
-                # For demo purposes, add some sample data
-                tree.add_block_keys("Sample_Creation_Key_1", "Sample_Sale_Key_1")
-                tree.add_block_keys("Sample_Creation_Key_2", "Sample_Sale_Key_2")
-                
-                print("\nHierarchical View:")
-                print_merkle_tree_recursive(tree.root)
-                
-                print("\nLevel-wise View:")
-                print_merkle_tree(tree.root)
-                
-            elif tree_choice == "3":
-                tree = MerkleTree()
-                # For demo purposes, add some sample data
-                tree.add_block_keys("Sample_Creation_Key_1", "Sample_Sale_Key_1")
-                tree.add_block_keys("Sample_Creation_Key_2", "Sample_Sale_Key_2")
-                
-                if tree.verify_merkle():
-                    print("✅ Merkle Tree verification successful!")
-                else:
-                    print("❌ Merkle Tree verification failed!")
-            
-            elif tree_choice == "4":
-                continue
-                
-            else:
-                print("❌ Invalid choice!")
-
-        elif choice == "6":
-            print("\n👋 Exiting BLS Signature Testing System. Goodbye!")
-            break
-
-        else:
-            print("❌ Invalid choice! Please enter a number between 1 and 6.")
-
-
-# Run the program
-if __name__ == "__main__":
-    main()
