@@ -72,7 +72,6 @@ class Blockchain:
         self.pending_blocks = queue.Queue()
         self.merkle_tree = MerkleTree()  # Create merkle_tree as an instance variable
         self.initialize_genesis_blocks()
-        self.start_verification_thread()
         self.start_heartbeat()
 
     def initialize_genesis_blocks(self):
@@ -218,34 +217,31 @@ class Blockchain:
         return ""  # Default case
 
     def verify_and_add_blocks(self):
-        while True:
-            time.sleep(2)  # Reduce delay for faster validation
-            while not self.pending_blocks.empty():
-                block = self.pending_blocks.get()
+        while not self.pending_blocks.empty():
+            block = self.pending_blocks.get()
+            
+            # Step 1: Verify block hash integrity
+            if not self.verify_block_hash(block):
+                print(f"❌ Block hash verification failed for {block.brand} - UID: {block.uid}")
+                continue
                 
-                # Step 1: Verify block hash integrity
-                if not self.verify_block_hash(block):
-                    print(f"❌ Block hash verification failed for {block.brand} - UID: {block.uid}")
+            # Step 2: Verify creation signature
+            if not block.verify_creation_signature():
+                print(f"❌ Creation signature verification failed for {block.brand} - UID: {block.uid}")
+                continue
+                
+            # Step 3: If this is a sale update (has sale signature), verify it
+            if block.sale_agg_signature and block.sale_agg_pub:
+                if not block.verify_sale_signature():
+                    print(f"❌ Sale signature verification failed for {block.brand} - UID: {block.uid}")
                     continue
-                    
-                # Step 2: Verify creation signature
-                if not block.verify_creation_signature():
-                    print(f"❌ Creation signature verification failed for {block.brand} - UID: {block.uid}")
-                    continue
-                    
-                # Step 3: If this is a sale update (has sale signature), verify it
-                if block.sale_agg_signature and block.sale_agg_pub:
-                    if not block.verify_sale_signature():
-                        print(f"❌ Sale signature verification failed for {block.brand} - UID: {block.uid}")
-                        continue
-                
-                # Step 4: Commit block to chain
-                self.commit_block(block)
-                
-                # Step 5: Verify Merkle tree integrity after adding the new block
-                if not self.merkle_tree.verify_merkle():
-                    print("❌ Merkle tree verification failed after adding block!")
-                    # We could implement rollback logic here if needed
+            
+            # Step 4: Commit block to chain
+            self.commit_block(block)
+            
+            # Step 5: Verify Merkle tree integrity after adding the new block
+            if not self.merkle_tree.verify_merkle():
+                print("❌ Merkle tree verification failed after adding block!")
 
     def verify_block_hash(self, block):
         """Verify that the block's hash is calculated correctly"""
@@ -457,15 +453,20 @@ class Blockchain:
             print_merkle_tree_recursive(self.merkle_tree.root)
         else:
             print("Merkle tree is empty.")
-    
-    def start_verification_thread(self):
-        thread = threading.Thread(target=self.verify_and_add_blocks, daemon=True)
-        thread.start()
 
     def start_heartbeat(self):
         def heartbeat():
             while True:
-                print("Running heartbeat check...")
+                # Process any pending blocks
+                if not self.pending_blocks.empty():
+                    print(f"🔄 Processing {self.pending_blocks.qsize()} pending transactions...")
+                    # Call the verification function directly
+                    self.verify_and_add_blocks()
+                    print("✅ All pending transactions processed")
+                else:
+                    print("ℹ️ No pending transactions to process")
+                    
+                print("\n🔄 Running scheduled heartbeat check...")
                 # Verify blockchain integrity
                 if not self.validate_chain():
                     print("❌ Blockchain integrity verification failed.")
@@ -474,14 +475,10 @@ class Blockchain:
                 if not self.verify_merkle_tree():
                     print("❌ Merkle tree verification failed.")
                 
-                # Commit any pending blocks
-                while not self.pending_blocks.empty():
-                    block = self.pending_blocks.get()
-                    self.commit_block(block)
-                    print(f"✔️ Block {block.uid} committed.")
                 
                 # Wait for 5 minutes before running the next heartbeat check
-                time.sleep(300) # Input in seconds.
+                print(f"⏱️ Next verification scheduled in 5 minutes...")
+                time.sleep(100) # 5 minutes in seconds
 
         heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
         heartbeat_thread.start()
