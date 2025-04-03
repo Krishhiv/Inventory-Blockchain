@@ -1,5 +1,4 @@
 import json
-import getpass
 import base64
 import os
 import bcrypt

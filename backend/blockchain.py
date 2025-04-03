@@ -1,3 +1,4 @@
+import os
 import time
 import hashlib
 import threading
@@ -158,16 +159,14 @@ class Blockchain:
         else:
             cust_password = getpass.getpass(f"Enter Customer {cust_name}'s password: ")
 
-        # Update the original block's status first
-        block_to_sell.status = "Sold"
-        
         # Create a sale update block (clone of the block to be sold with additional signatures)
+        # but don't modify the original block yet
         sale_update_block = Block(
             uid=block_to_sell.uid,
             brand=block_to_sell.brand,
             item_name=block_to_sell.item_name,
             price=block_to_sell.price,
-            status="Sold",  # Ensure this is set to "Sold"
+            status="Sold",  # Set to "Sold" in the pending block only
             prevHash=block_to_sell.prevHash
         )
         
@@ -176,13 +175,18 @@ class Blockchain:
         sale_update_block.creation_signature = block_to_sell.creation_signature
         sale_update_block.creation_pub = block_to_sell.creation_pub
         
+        # Add sale identification information - this helps the verification process find the block to update
+        sale_update_block.original_block_reference = {
+            "letter": first_letter,
+            "uid": uid,
+            "brand": brand
+        }
+        
         # Add new sale signatures
         signature_result = Signing.sign_data_dual(
             emp_name, emp_password, cust_name, cust_password, sale_update_block.get_signable_data())
         
         if not signature_result:
-            # Revert the status if signature fails
-            block_to_sell.status = "Available"
             print("❌ Failed to create signatures for the sale. Sale canceled.")
             return
             
@@ -193,28 +197,7 @@ class Blockchain:
         
         # Add the update to the pending queue for verification
         self.pending_blocks.put(sale_update_block)
-        print("Sale submitted for verification.")
-
-    def get_last_block_hash(self, letter):
-        if letter and letter in self.chains:
-            current = self.chains[letter]
-            while current.next:
-                current = current.next
-            return current.hash
-        
-        # If the letter doesn't exist or is before 'A', return an empty string
-        if letter < 'A':
-            return ""
-            
-        # If the letter is higher than 'A', get the last block of the previous letter
-        prev_letter = chr(ord(letter) - 1)
-        while prev_letter >= 'A' and prev_letter not in self.chains:
-            prev_letter = chr(ord(prev_letter) - 1)
-            
-        if prev_letter >= 'A':
-            return self.get_last_block_hash(prev_letter)
-            
-        return ""  # Default case
+        print("Sale submitted for verification. Status will be updated during next heartbeat cycle.")
 
     def verify_and_add_blocks(self):
         while not self.pending_blocks.empty():
@@ -254,26 +237,50 @@ class Blockchain:
         # Handle sale updates differently from new blocks
         if block.sale_agg_signature and block.sale_agg_pub:
             # This is a sale update - find the existing block and update it
-            current = self.chains[first_letter]
-            while current:
-                if current.uid == block.uid and current.brand == block.brand:
-                    # Update existing block with sale information
-                    current.status = "Sold"  # Ensure status is updated
-                    current.sale_agg_signature = block.sale_agg_signature
-                    current.sale_agg_pub = block.sale_agg_pub
-                    current.hash = current.calculate_hash()  # Recalculate hash after updates
-                    
-                    # Update the Merkle tree with sale information
-                    self.merkle_tree.add_block_keys(current.creation_pub, current.sale_agg_pub)
-                    
-                    print(f"✅ Sale verified and recorded for {block.brand} - UID: {block.uid}")
-                    print(f"Status updated to: {current.status}")  # Add status confirmation
-                    
-                    # Update chain linkages after the sale
-                    self.update_subsequent_prev_hashes(first_letter)
-                    return
-                current = current.next
+            if hasattr(block, 'original_block_reference'):
+                # Use the reference to quickly find the block to update
+                letter = block.original_block_reference["letter"]
+                target_uid = block.original_block_reference["uid"]
+                target_brand = block.original_block_reference["brand"]
                 
+                current = self.chains[letter]
+                while current:
+                    if current.uid == target_uid and current.brand == target_brand:
+                        # Now update existing block with sale information
+                        current.status = "Sold"  # Update status NOW during verification
+                        current.sale_agg_signature = block.sale_agg_signature
+                        current.sale_agg_pub = block.sale_agg_pub
+                        current.hash = current.calculate_hash()  # Recalculate hash after updates
+                        
+                        # Update the Merkle tree with sale information
+                        self.merkle_tree.add_block_keys(current.creation_pub, current.sale_agg_pub)
+                        
+                        print(f"✅ Sale verified and recorded for {block.brand} - UID: {block.uid}")
+                        print(f"Status updated to: {current.status}")  # Add status confirmation
+                        
+                        # Update chain linkages after the sale
+                        self.update_subsequent_prev_hashes(letter)
+                        return
+                    current = current.next
+            else:
+                # Backward compatibility for existing code without references
+                current = self.chains[first_letter]
+                while current:
+                    if current.uid == block.uid and current.brand == block.brand:
+                        current.status = "Sold" 
+                        current.sale_agg_signature = block.sale_agg_signature
+                        current.sale_agg_pub = block.sale_agg_pub
+                        current.hash = current.calculate_hash()
+                        
+                        self.merkle_tree.add_block_keys(current.creation_pub, current.sale_agg_pub)
+                        
+                        print(f"✅ Sale verified and recorded for {block.brand} - UID: {block.uid}")
+                        print(f"Status updated to: {current.status}")
+                        
+                        self.update_subsequent_prev_hashes(first_letter)
+                        return
+                    current = current.next
+                    
             print(f"❌ Could not find block with UID {block.uid} to update sale status")
             return
         
@@ -465,7 +472,7 @@ class Blockchain:
                     print("✅ All pending transactions processed")
                 else:
                     print("ℹ️ No pending transactions to process")
-                    
+
                 print("\n🔄 Running scheduled heartbeat check...")
                 # Verify blockchain integrity
                 if not self.validate_chain():
@@ -504,6 +511,28 @@ class Blockchain:
                     
                 current = current.next
             print("-" * 60)
+
+    def get_last_block_hash(self, letter):
+        """Get the hash of the last block in a specific letter chain"""
+        if letter and letter in self.chains:
+            current = self.chains[letter]
+            while current.next:
+                current = current.next
+            return current.hash
+        
+        # If the letter doesn't exist or is before 'A', return an empty string
+        if letter < 'A':
+            return ""
+            
+        # If the letter is higher than 'A', get the last block of the previous letter
+        prev_letter = chr(ord(letter) - 1)
+        while prev_letter >= 'A' and prev_letter not in self.chains:
+            prev_letter = chr(ord(prev_letter) - 1)
+            
+        if prev_letter >= 'A':
+            return self.get_last_block_hash(prev_letter)
+            
+        return ""  # Default case
 
 def main():
     """
@@ -711,7 +740,6 @@ def main():
 
 if __name__ == "__main__":
     # Make sure the profiles directory exists
-    import os
     os.makedirs("./profiles", exist_ok=True)
     
     try:
