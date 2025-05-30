@@ -1,53 +1,53 @@
 'use client';
-import React, {useState, useEffect} from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 
 const OTPPage = () => {
-    const [otp, setOtp] = useState("")
-    const [error, setError] = useState("")
-    const [success, setSuccess] = useState("")
-    const router = useRouter()
-    const searchParams = useSearchParams()
-    const email = searchParams.get("email")
+  const [otp, setOtp] = useState("")
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const email = searchParams.get("email")
 
-    useEffect(() => {
-        if (!email) {
-        setError("Missing email. Please login again.")
-        }
-    }, [email])
+  useEffect(() => {
+    if (!email) {
+      setError("Missing email. Please login again.")
+    }
+  }, [email])
 
-    const handleVerify = async (e) => {
-        e.preventDefault()
+  const handleVerify = async (e) => {
+    e.preventDefault()
 
-        if (!otp || !email) {
-          setError("Please enter the OTP.")
-          return
-        }
+    if (!otp || !email) {
+      setError("Please enter the OTP.")
+      return
+    }
 
-        try {
-          const res = await fetch("http://localhost:8000/verify-otp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, otp }),
-          })
+    try {
+      const res = await fetch("http://localhost:8000/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
+      })
 
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.detail || "OTP verification failed")
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "OTP verification failed")
 
-          // ✅ Store the token
-          localStorage.setItem("access_token", data.access_token)
+      // ✅ Store the token
+      localStorage.setItem("access_token", data.access_token)
 
-          setError("")
-          setSuccess("Login successful!")
+      setError("")
+      setSuccess("Login successful!")
 
-          setTimeout(() => {
-            router.push("/dashboard")
-          }, 1500)
-        } catch (err) {
-          setError(err.message)
-          setSuccess("")
-        }
-      }
+      setTimeout(() => {
+        router.push("/dashboard")
+      }, 1500)
+    } catch (err) {
+      setError(err.message)
+      setSuccess("")
+    }
+  }
 
 
   return (
