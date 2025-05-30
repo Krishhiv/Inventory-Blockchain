@@ -1,9 +1,0 @@
-[
-    {
-        "name": "krishhiv",
-        "hashed_password": "$2b$12$hIc./cTSV6SFA6OvXwATwO7.qRsNchacS6ME7NZSlFuG5rqFq18Im",
-        "public_key": "sKylhAkQ4Jl2IOl5VGRuX493touKNrEiuZMqzxx0Qwzqn5Mb1uEfsrYL0iwmsfJN",
-        "encrypted_private_key": "tAvVGmoz8QrHA7EsVAewNv5k81ahjf5wEv181YYv7D4ep/DrjFd3iSyQyh8CGzyFJl4Bog7qO+wOOG6J",
-        "salt": "$2b$12$hIc./cTSV6SFA6OvXwATwO"
-    }
-]

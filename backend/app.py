@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from auth_utils import hash_password, verify_password, generate_otp, send_otp_email
+from auth_utils import verify_password, generate_otp, send_otp_email
 import json
 from pathlib import Path
 
@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-USERS_FILE = Path("users.json")
+USERS_FILE = Path("employees.json")
 
 def load_users():
     if USERS_FILE.exists():

@@ -12,8 +12,8 @@ from collections import deque
 BLS_GROUP_ORDER = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 
 class Keys:
-    def __init__(self, name, role, password):
-        self.name = name
+    def __init__(self, email, role, password):
+        self.email = email
         self.role = role
         self.salt = bcrypt.gensalt()  # Generate bcrypt salt
         self.nonce = os.urandom(12)  # Generate a random nonce for AES-GCM
@@ -54,26 +54,37 @@ class Keys:
         return base64.b64encode(self.nonce + tag + encrypted_private_key).decode()
 
     def add_to_json(self):
-        """Stores user data securely in a JSON file."""
-        filename = f"./profiles/{self.role}s.json"
+        """Stores user data securely in a JSON file, keyed by email."""
+        filename = f"./backend/{self.role}s.json"
+        
+        # Prepare data entry with base64 and decoded values
         data_entry = {
-            "name": self.name,
             "hashed_password": self.hashed_password,
             "public_key": base64.b64encode(self.public_key).decode(),
             "encrypted_private_key": self.encrypted_private_key,  # Already a Base64 string
             "salt": self.salt.decode(),  # Store bcrypt salt as string
+            "role": self.role
         }
+
+        # Try loading existing data (as dict), else start with empty dict
         try:
             with open(filename, "r") as file:
                 data = json.load(file)
         except (FileNotFoundError, json.JSONDecodeError):
-            data = []
-        data.append(data_entry)
+            data = {}
+
+        # Add or update the entry under the email key
+        data[self.email] = data_entry
+
+        # Write back to file
         with open(filename, "w") as file:
             json.dump(data, file, indent=4)
 
+        print(f"✅ User '{self.email}' added to {filename}.")
+
+
     @staticmethod
-    def authenticate_and_decrypt(name, role, input_password):
+    def authenticate_and_decrypt(email, role, input_password):
         """Authenticates a user and decrypts their private key if credentials match."""
         filename = f"./profiles/{role}s.json"
         try:
@@ -83,7 +94,7 @@ class Keys:
             print("No registered users found.")
             return None
         for user in users:
-            if user["name"] == name:
+            if user["email"] == email:
                 stored_hashed_password = user["hashed_password"].encode()
                 salt = user["salt"].encode()
                 encrypted_data = base64.b64decode(user["encrypted_private_key"])
@@ -122,8 +133,8 @@ class Keys:
 
 class Signing:
     @staticmethod
-    def sign_data(name, role, password, data):
-        priv_key_hex, public_key = Keys.authenticate_and_decrypt(name, role, password)
+    def sign_data(email, role, password, data):
+        priv_key_hex, public_key = Keys.authenticate_and_decrypt(email, role, password)
         if priv_key_hex is None:
             print("❌ Authentication failed. Unable to sign data.")
             return None
@@ -138,9 +149,9 @@ class Signing:
             return base64.b64encode(bytes(signature)).decode(), public_key_b64
     
     @staticmethod
-    def sign_data_dual(emp_name, emp_password, cust_name, cust_password, data):
-        emp_private_key_hex, emp_public_key = Keys.authenticate_and_decrypt(emp_name, "employee", emp_password)
-        cust_private_key_hex, cust_public_key = Keys.authenticate_and_decrypt(cust_name, "customer", cust_password)
+    def sign_data_dual(emp_email, emp_password, cust_email, cust_password, data):
+        emp_private_key_hex, emp_public_key = Keys.authenticate_and_decrypt(emp_email, "employee", emp_password)
+        cust_private_key_hex, cust_public_key = Keys.authenticate_and_decrypt(cust_email, "customer", cust_password)
 
         if not emp_private_key_hex or not cust_private_key_hex:
             print("❌ Authentication failed for one or both users. Unable to sign data.")

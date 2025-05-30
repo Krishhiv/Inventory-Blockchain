@@ -1,9 +1,0 @@
-[
-    {
-        "name": "diya",
-        "hashed_password": "$2b$12$68os/ks49YzA3byMQK7LRuSIHCiWDZLUoSkHtCtE9diHjtbq8dNmG",
-        "public_key": "uBkKnyewpU2w/d8FnXyHRzbOqtNqiWn4MiCDV0biCYiFnmjgmsrXvgQhhdvcBvdk",
-        "encrypted_private_key": "zVL0KDvhu6Y47vZE7d+ZxYmLYEI2o+F0eopv+IgmDE45m9mZsndKJ/SrJOjhuvHmFSUBlDVrsROHQ+UX",
-        "salt": "$2b$12$68os/ks49YzA3byMQK7LRu"
-    }
-]

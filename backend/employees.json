@@ -1,0 +1,20 @@
+{
+  "krishhiv@gmail.com": {
+    "hashed_password": "$2b$12$rgztqlgNy0WfMuw51hsRJ.Z.9DzRjSi1KUuo0d5ndFG7scpiSjl26",
+    "public_key": "iDgCs0flV4XGjsqrO2iue8nvHH950mwjV64kBOGbD292/bHB2hzUJZMFLkcteRTy",
+    "encrypted_private_key": "jD4yhQm12BzX8FWzYHPQob86RvHSXD2w89fSuQSeA9TcAgK1HHeoSqTY5KKrLNYPOJTFmnKSuJgCNURT",
+    "salt": "$2b$12$rgztqlgNy0WfMuw51hsRJ.",
+    "role": "employee",
+    "otp": null,
+    "otp_expiry": null
+  },
+  "pvmehra@gmail.com": {
+    "hashed_password": "$2b$12$ySOzsuF51wb3ClkKB.8Swustv09pqioT9aCMrb/sHWnueSJ3a3Th2",
+    "public_key": "iDgCs0flV4XGjsqrO2iue8nvHH950mwjV64kBOGbD292/bHB2hzUJZMFLkcteRTy",
+    "encrypted_private_key": "ZAJ3Oj419XAP6wX25+ulvff5qzR3hvEaHMkPCcCIa5Le9kmy0vf00I2tARrhj2LnMNgzOOh5bwjVcD16",
+    "salt": "$2b$12$ySOzsuF51wb3ClkKB.8Swu",
+    "role": "employee",
+    "otp": null,
+    "otp_expiry": null
+  }
+}

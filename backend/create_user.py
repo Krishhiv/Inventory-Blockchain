@@ -1,38 +1,16 @@
 import json
 from pathlib import Path
-from auth_utils import hash_password
+from signatures import Keys
 
-USERS_FILE = Path("./backend/employees.json")
+email = input("Please enter your email ID: ")
 
-def load_users():
-    if USERS_FILE.exists():
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    return {}
+role = input("Please enter 1 (employee) or 2 (customer): ")
+if role == "1":
+    role = "employee"
+elif role == "2":
+    role = "customer"
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
+password = input("Please enter your password: ")
 
-def add_user(email: str, password: str):
-    users = load_users()
-
-    if email in users:
-        print(f"❌ User '{email}' already exists.")
-        return
-
-    users[email] = {
-        "hashed_password": hash_password(password),
-        "otp": None,
-        "otp_expiry": None
-    }
-
-    save_users(users)
-    print(f"✅ User '{email}' added successfully.")
-
-if __name__ == "__main__":
-    # CHANGE THESE VALUES for different test users
-    test_email = input("Enter your email ID: ")
-    test_password = input("Enter your password: ")
-
-    add_user(test_email, test_password)
+user = Keys(email=email, role=role, password=password)
+user.add_to_json()
