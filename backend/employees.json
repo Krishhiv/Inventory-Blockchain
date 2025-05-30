@@ -16,5 +16,14 @@
     "role": "employee",
     "otp": null,
     "otp_expiry": null
+  },
+  "laramehra@gmail.com": {
+    "hashed_password": "$2b$12$vVxBM9FQdnzJQBVfF3hDGe2QgmWo0xhchurQHyHeT8RRAmdLIBxQS",
+    "public_key": "iDgCs0flV4XGjsqrO2iue8nvHH950mwjV64kBOGbD292/bHB2hzUJZMFLkcteRTy",
+    "encrypted_private_key": "blna2Wto+/F0cCyS3IPTrsxXDhity2dV3jzRaij4a4erMDKZik6Ny3Qyvx0qnrqdqwq6dNI6eY6Fm8No",
+    "salt": "$2b$12$vVxBM9FQdnzJQBVfF3hDGe",
+    "role": "employee",
+    "otp": null,
+    "otp_expiry": null
   }
 }

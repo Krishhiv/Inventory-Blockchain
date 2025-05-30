@@ -20,32 +20,35 @@ const OTPPage = () => {
         e.preventDefault()
 
         if (!otp || !email) {
-        setError("Please enter the OTP.")
-        return
+          setError("Please enter the OTP.")
+          return
         }
 
         try {
-        const res = await fetch("http://localhost:8000/verify-otp", {
+          const res = await fetch("http://localhost:8000/verify-otp", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, otp }),
-        })
+          })
 
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.detail || "OTP verification failed")
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.detail || "OTP verification failed")
 
-        setError("")
-        setSuccess("Login successful!")
+          // ✅ Store the token
+          localStorage.setItem("access_token", data.access_token)
 
-        // Optional: redirect to a protected route
-        setTimeout(() => {
+          setError("")
+          setSuccess("Login successful!")
+
+          setTimeout(() => {
             router.push("/dashboard")
-        }, 1500)
+          }, 1500)
         } catch (err) {
-        setError(err.message)
-        setSuccess("")
+          setError(err.message)
+          setSuccess("")
         }
-    }
+      }
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-400">
