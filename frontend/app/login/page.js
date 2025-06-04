@@ -19,7 +19,7 @@ const Page = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:8000/login", {
+      const res = await fetch("http://localhost:8000/emp-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -29,7 +29,7 @@ const Page = () => {
       if (!res.ok) throw new Error(data.detail || "Login failed");
 
       setError("");
-      router.push(`/otp?email=${encodeURIComponent(email)}`);
+      router.push(`/emp-otp?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err.message);
     }

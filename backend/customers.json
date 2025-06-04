@@ -1,0 +1,12 @@
+{
+  "krishhiv17@gmail.com": {
+    "email": "krishhiv17@gmail.com",
+    "role": "customer",
+    "public_key": "taV1R0bFNOrvUDyOYgZeM9b2QPqduHXHlFlUvEZAk296knqCkr9a9R147c46gnKu",
+    "encrypted_private_key": "k6seJoewp0cilZTj+GEUcm9DcI55ockoSByH8cS83zYTCtNY0kbqCk1CYDyxLEBeNHdfflOOz6SYXVvp",
+    "salt": "$2b$12$ol1lbiqeRFf4pCY0ZR07He",
+    "hashed_password": "$2b$12$ol1lbiqeRFf4pCY0ZR07HeKbWcEq4Dych.IjqZ6COnrdy4LIwmK/e",
+    "otp": null,
+    "otp_expiry": null
+  }
+}

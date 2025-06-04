@@ -55,7 +55,8 @@ class Keys:
 
     def add_to_json(self):
         """Stores user data securely in a JSON file, keyed by email."""
-        filename = f"./backend/{self.role}s.json"
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        filename = os.path.join(base_dir, f"{self.role}s.json")
         
         # Prepare data entry with base64 and decoded values
         data_entry = {
